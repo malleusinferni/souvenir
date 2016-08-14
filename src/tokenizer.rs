@@ -180,7 +180,10 @@ impl<'input> Tokenizer<'input> {
                     _ => Some(error(ErrReason::InvalidStringLiteral, i0)),
                 },
 
-                '?' => unimplemented!(),
+                '?' => {
+                    self.bump();
+                    Some(self.screaming_case(i0))
+                },
 
                 '\'' => {
                     self.bump();
@@ -192,24 +195,44 @@ impl<'input> Tokenizer<'input> {
                     }
                 },
 
-                '+' => Some(Ok((i0, Tok::OpAdd, i0 + 1))),
-                '*' => Some(Ok((i0, Tok::OpMul, i0 + 1))),
-                '/' => Some(Ok((i0, Tok::OpDiv, i0 + 1))),
-                '_' => Some(Ok((i0, Tok::Hole, i0 + 1))),
-                '|' => Some(Ok((i0, Tok::Pipe, i0 + 1))),
-                ',' => Some(Ok((i0, Tok::OpComma, i0 + 1))),
+                '#' => {
+                    self.bump();
+                    match self.snake_case(i0) {
+                        Ok((start, Tok::NmFunc(s), end)) => {
+                            Some(Ok((start, Tok::LitAtom(s), end)))
+                        },
+                        e => Some(e),
+                    }
+                },
 
-                '(' => Some(Ok((i0, Tok::LParen, i0 + 1))),
-                ')' => Some(Ok((i0, Tok::RParen, i0 + 1))),
+                '=' => match self.bump() {
+                    Some((i1, '=')) => {
+                        self.bump();
+                        Some(Ok((i0, Tok::Knot, i1 + 1)))
+                    },
+                    _ => {
+                        Some(Ok((i0, Tok::OpAssign, i0 + 1)))
+                    },
+                },
 
-                '[' => Some(Ok((i0, Tok::LSquare, i0 + 1))),
-                ']' => Some(Ok((i0, Tok::RSquare, i0 + 1))),
+                '+' => { self.bump(); Some(Ok((i0, Tok::OpAdd, i0 + 1))) },
+                '*' => { self.bump(); Some(Ok((i0, Tok::OpMul, i0 + 1))) },
+                '/' => { self.bump(); Some(Ok((i0, Tok::OpDiv, i0 + 1))) },
+                '_' => { self.bump(); Some(Ok((i0, Tok::Hole, i0 + 1))) },
+                '|' => { self.bump(); Some(Ok((i0, Tok::Pipe, i0 + 1))) },
+                ',' => { self.bump(); Some(Ok((i0, Tok::OpComma, i0 + 1))) },
 
-                '{' => Some(Ok((i0, Tok::LCurly, i0 + 1))),
-                '}' => Some(Ok((i0, Tok::RCurly, i0 + 1))),
+                '(' => { self.bump(); Some(Ok((i0, Tok::LParen, i0 + 1))) },
+                ')' => { self.bump(); Some(Ok((i0, Tok::RParen, i0 + 1))) },
+
+                '[' => { self.bump(); Some(Ok((i0, Tok::LSquare, i0 + 1))) },
+                ']' => { self.bump(); Some(Ok((i0, Tok::RSquare, i0 + 1))) },
+
+                '{' => { self.bump(); Some(Ok((i0, Tok::LCurly, i0 + 1))) },
+                '}' => { self.bump(); Some(Ok((i0, Tok::RCurly, i0 + 1))) },
 
                 c if c.is_alphabetic() => if c.is_lowercase() {
-                    unimplemented!()
+                    Some(self.snake_case(i0))
                 } else {
                     unimplemented!()
                 },
@@ -218,7 +241,7 @@ impl<'input> Tokenizer<'input> {
                     unimplemented!()
                 },
 
-                _ => unimplemented!(),
+                _ => panic!("Can't handle '{}'", c0),
             };
         }
     }
@@ -242,7 +265,10 @@ impl<'input> Tokenizer<'input> {
     }
 
     fn screaming_case(&mut self, start: usize) -> TokResult<Tok<'input>> {
-        unimplemented!()
+        let terminate = |c: char| { c == '\n' };
+        let end = self.take_until(terminate).unwrap();
+        let contents = &self.text[start .. end];
+        Ok((start, Tok::NmMacro(contents), end))
     }
 }
 
@@ -265,7 +291,7 @@ impl<'input> Iterator for Tokenizer<'input> {
 
 #[test]
 fn quick_test() {
-    let mut tokenizer = Tokenizer::new("== start\n(ok)#ok", 0);
+    let mut tokenizer = Tokenizer::new("== start\n(ok)#ok\n", 0);
 
     let expected = &[
         Tok::Knot,
@@ -274,10 +300,12 @@ fn quick_test() {
         Tok::LParen,
         Tok::NmFunc("ok"),
         Tok::RParen,
-        Tok::LitAtom("ok"),
+        Tok::LitAtom("#ok"),
     ];
 
     for (wanted, got) in expected.iter().zip(tokenizer) {
-        assert_eq!(wanted, &(got.expect("Oh no").1));
+        let tok = got.expect("Oh no").1;
+        println!("{:?}", &tok);
+        assert_eq!(wanted, &tok);
     }
 }
