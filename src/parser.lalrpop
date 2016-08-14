@@ -1,0 +1,141 @@
+use ast;
+
+grammar;
+
+pub Module: ast::Module = {
+    <Knot*> => ast::Module {
+        globals: vec![], // FIXME
+        knots: <>,
+    },
+};
+
+pub Knot: ast::Knot = {
+    "==" <label:FuncName> <args:ArgList?> <body:Statement*> => ast::Knot {
+        name: label,
+        args: args.unwrap_or_else(|| vec![]),
+        body: body,
+    },
+};
+
+Statement: ast::Stmt = {
+    "disarm" <Label> => {
+        ast::Stmt::Disarm(<>)
+    },
+
+    "weave" <l:Label?> <body:Choice*> EndBlock => {
+        ast::Stmt::Weave(l.unwrap_or(ast::Label::Anonymous), body)
+    },
+
+    "trap" <l:Label?> <body:Trap*> EndBlock => {
+        ast::Stmt::Trap(l.unwrap_or(ast::Label::Anonymous), body)
+    },
+
+    "listen" <body:Trap*> EndBlock => {
+        ast::Stmt::Listen(body)
+    },
+
+    "trace" <Expr> => ast::Stmt::Trace(<>),
+
+    "wait" <Expr> => ast::Stmt::Wait(<>),
+
+    <Expr> "<-" <Expr> => ast::Stmt::SendMsg(<>),
+
+    //Eol => ast::Stmt::Empty,
+};
+
+Choice: ast::Choice = {
+    "|" <g:ChoiceGuard> <s:LitStr> <body:Statement*> => ast::Choice {
+        guard: g,
+        title: s,
+        body: body,
+    },
+
+    "|" "_" <body:Statement*> => ast::Choice {
+        guard: ast::Expr::Hole,
+        title: ast::Expr::Str(String::new()),
+        body: body,
+    }
+
+    // TODO: Handle more complicated choice formats
+};
+
+#[inline]
+ChoiceGuard: ast::Expr = {
+    <g:("if" <Expr> "then")?> => g.unwrap_or_else(|| ast::Expr::lit_true())
+};
+
+Trap: ast::Trap = {
+    "|" <p:Expr> <o:TrapSrc> <g:TrapGuard> <body:Statement*> => ast::Trap {
+        pattern: p,
+        guard: g,
+        origin: o,
+        body: body,
+    },
+};
+
+#[inline]
+TrapSrc: ast::Expr = {
+    <o:("from" <VarName>)?> => o.unwrap_or_else(|| ast::Expr::Hole)
+};
+
+#[inline]
+TrapGuard: ast::Expr = {
+    <g:("when" <Expr>)?> => g.unwrap_or_else(|| ast::Expr::lit_true())
+};
+
+Comma<T>: Vec<T> = {
+    <v:(<T> ",")*> <e:T> => {
+        let mut v = v;
+        v.push(e);
+        v
+    },
+};
+
+ArgList: Vec<ast::Expr> = {
+    "(" <Comma<VarName>> ")" => <>,
+    "(" ")" => vec![], // Do these actually have to be different?
+    "()" => vec![],
+};
+
+#[inline]
+Eol: () = {
+    ";" => (),
+    r"--.*\n" => (),
+    "\n" => (),
+};
+
+Label: ast::Label = {
+    <s:r"'[a-z][a-z_]*"> => ast::Label::Explicit({
+        s.chars().skip(1).collect::<String>()
+    })
+};
+
+FuncName: ast::Label = {
+    <s:r"[a-z][a-z_]*"> => ast::Label::Explicit(s.to_string()),
+};
+
+VarName: ast::Expr = {
+    <s:r"[A-Z][A-Za-z0-9]*"> => ast::Expr::Var(s.to_string())
+};
+
+#[inline]
+EndBlock = ";;";
+
+Expr: ast::Expr = {
+    <VarName> => <>,
+    <LitAtom> => <>,
+};
+
+LitAtom: ast::Expr = {
+    <a:r"#[a-z][a-z_]*"> => ast::Expr::Atom({
+        a.chars().skip(1).collect::<String>()
+    })
+};
+
+LitStr: ast::Expr = {
+    <s:r"> [^\n]*\n"> => ast::Expr::Str({
+        s.chars().skip(2).collect::<String>()
+    })
+};
+
+// vim: ft=rust
