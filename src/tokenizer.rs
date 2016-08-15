@@ -118,10 +118,7 @@ impl<'input> Tokenizer<'input> {
 
     fn next_unshifted(&mut self) -> Option<TokResult<Tok<'input>>> {
         loop {
-            let (i0, c0) = match self.lookahead {
-                Some(ic) => ic,
-                None => return None,
-            };
+            let (i0, c0) = eof!(self.lookahead);
 
             return match c0 {
                 ' ' | '\t' => {
@@ -169,30 +166,11 @@ impl<'input> Tokenizer<'input> {
                     _ => Some(error(ErrReason::InvalidStringLiteral, i0)),
                 },
 
-                '?' => {
-                    self.bump();
-                    Some(self.screaming_case(i0))
-                },
+                '?' => { self.bump(); Some(self.screaming_case(i0)) },
 
-                '\'' => {
-                    self.bump();
-                    match self.snake_case(i0) {
-                        Ok((start, Tok::NmFunc(s), end)) => {
-                            Some(Ok((start, Tok::NmLabel(s), end)))
-                        },
-                        e => Some(e),
-                    }
-                },
+                '\'' => { self.bump(); Some(self.snake_case(i0)) },
 
-                '#' => {
-                    self.bump();
-                    match self.snake_case(i0) {
-                        Ok((start, Tok::NmFunc(s), end)) => {
-                            Some(Ok((start, Tok::LitAtom(s), end)))
-                        },
-                        e => Some(e),
-                    }
-                },
+                '#' => { self.bump(); Some(self.snake_case(i0)) },
 
                 '=' => match self.bump() {
                     Some((i1, '=')) => {
@@ -210,6 +188,7 @@ impl<'input> Tokenizer<'input> {
                 '_' => { self.bump(); Some(Ok((i0, Tok::Hole, i0 + 1))) },
                 '|' => { self.bump(); Some(Ok((i0, Tok::Pipe, i0 + 1))) },
                 ',' => { self.bump(); Some(Ok((i0, Tok::OpComma, i0 + 1))) },
+                '.' => { self.bump(); Some(Ok((i0, Tok::OpDot, i0 + 1))) },
 
                 '(' => { self.bump(); Some(Ok((i0, Tok::LParen, i0 + 1))) },
                 ')' => { self.bump(); Some(Ok((i0, Tok::RParen, i0 + 1))) },
@@ -227,7 +206,7 @@ impl<'input> Tokenizer<'input> {
                 },
 
                 c if c.is_digit(10) => {
-                    unimplemented!()
+                    Some(self.number(i0))
                 },
 
                 _ => panic!("Can't handle '{}'", c0),
@@ -307,6 +286,11 @@ impl<'input> Tokenizer<'input> {
         let contents = &self.text[start .. end];
         Ok((start, Tok::NmMacro(contents), end))
     }
+
+    fn number(&mut self, start: usize) -> TokResult<Tok<'input>> {
+        let mut end = start;
+        unimplemented!()
+    }
 }
 
 impl<'input> Iterator for Tokenizer<'input> {
@@ -328,7 +312,7 @@ impl<'input> Iterator for Tokenizer<'input> {
 
 #[test]
 fn quick_test() {
-    let mut tokenizer = Tokenizer::new("== start\n(ok)#ok\n", 0);
+    let tokenizer = Tokenizer::new("== start\n(ok)#ok\n-- comment\n", 0);
 
     let expected = &[
         Tok::Knot,
@@ -338,6 +322,8 @@ fn quick_test() {
         Tok::NmFunc("ok"),
         Tok::RParen,
         Tok::LitAtom("#ok"),
+        Tok::EndLn,
+        Tok::EndLn,
     ];
 
     for (wanted, got) in expected.iter().zip(tokenizer) {
