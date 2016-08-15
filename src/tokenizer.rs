@@ -10,6 +10,9 @@ pub struct TokErr {
 pub enum ErrReason {
     UnrecognizedToken,
     InvalidStringLiteral,
+    InvalidCamelCase,
+    InvalidSnakeCase,
+    InvalidScreamingCase,
 }
 
 fn error<T>(r: ErrReason, l: usize) -> Result<T, TokErr> {
@@ -82,20 +85,6 @@ macro_rules! eof {
 
 pub type Spanned<T> = (usize, T, usize);
 pub type TokResult<T> = Result<Spanned<T>, TokErr>;
-
-const KEYWORDS: &'static [(&'static str, Tok<'static>)] = &[
-    ("disarm", Tok::KwDisarm),
-    ("from", Tok::KwFrom),
-    ("given", Tok::KwGiven),
-    ("if", Tok::KwIf),
-    ("listen", Tok::KwListen),
-    ("then", Tok::KwThen),
-    ("trace", Tok::KwTrace),
-    ("trap", Tok::KwTrap),
-    ("wait", Tok::KwWait),
-    ("weave", Tok::KwWeave),
-    ("when", Tok::KwWhen),
-];
 
 impl<'input> Tokenizer<'input> {
     pub fn new(text: &'input str, shift: usize) -> Self {
@@ -234,7 +223,7 @@ impl<'input> Tokenizer<'input> {
                 c if c.is_alphabetic() => if c.is_lowercase() {
                     Some(self.snake_case(i0))
                 } else {
-                    unimplemented!()
+                    Some(self.camel_case(i0))
                 },
 
                 c if c.is_digit(10) => {
@@ -254,19 +243,67 @@ impl<'input> Tokenizer<'input> {
     }
 
     fn snake_case(&mut self, start: usize) -> TokResult<Tok<'input>> {
-        let terminate = |c: char| { !(c == '_' || c.is_alphanumeric()) };
-        let end = self.take_until(terminate).unwrap();
-        let contents = &self.text[start .. end];
-        Ok((start, Tok::NmFunc(contents), end))
+        let mut end = start;
+        while let Some((i, c)) = self.lookahead {
+            if c.is_uppercase() {
+                return error(ErrReason::InvalidSnakeCase, i);
+            }
+
+            end = i;
+            if c != '_' && !c.is_alphanumeric() { break; }
+            self.bump();
+        }
+
+        let token = match &self.text[start .. end] {
+            "disarm" => Tok::KwDisarm,
+            "from" => Tok::KwFrom,
+            "given" => Tok::KwGiven,
+            "if" => Tok::KwIf,
+            "listen" => Tok::KwListen,
+            "then" => Tok::KwThen,
+            "trace" => Tok::KwTrace,
+            "trap" => Tok::KwTrap,
+            "wait" => Tok::KwWait,
+            "weave" => Tok::KwWeave,
+            "when" => Tok::KwWhen,
+            other => if other.starts_with('#') {
+                Tok::LitAtom(other)
+            } else if other.starts_with('\'') {
+                Tok::NmLabel(other)
+            } else {
+                Tok::NmFunc(other)
+            }
+        };
+
+        Ok((start, token, end))
     }
 
     fn camel_case(&mut self, start: usize) -> TokResult<Tok<'input>> {
-        unimplemented!()
+        let mut end = start;
+        while let Some((i, c)) = self.lookahead {
+            if c == '_' { return error(ErrReason::InvalidCamelCase, i); }
+
+            end = i;
+            if !c.is_alphanumeric() { break; }
+            self.bump();
+        }
+
+        let contents = &self.text[start .. end];
+        Ok((start, Tok::NmVar(contents), end))
     }
 
     fn screaming_case(&mut self, start: usize) -> TokResult<Tok<'input>> {
-        let terminate = |c: char| { c == '\n' };
-        let end = self.take_until(terminate).unwrap();
+        let mut end = start;
+        while let Some((i, c)) = self.lookahead {
+            if c.is_lowercase() {
+                return error(ErrReason::InvalidScreamingCase, i);
+            }
+
+            end = i;
+            if c != '_' && !c.is_alphanumeric() { break; }
+            self.bump();
+        }
+
         let contents = &self.text[start .. end];
         Ok((start, Tok::NmMacro(contents), end))
     }
