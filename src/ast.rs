@@ -32,8 +32,10 @@ pub struct Trap {
 pub enum Stmt {
     Empty,
     Disarm(Label),
+    Let(Expr, Expr),
     Listen(Vec<Trap>),
     SendMsg(Expr, Expr),
+    Spawn(Label, Vec<Expr>),
     TailCall(Label, Vec<Expr>),
     Trace(Expr),
     Trap(Label, Vec<Trap>),

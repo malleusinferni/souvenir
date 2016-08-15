@@ -39,11 +39,15 @@ Statement: ast::Stmt = {
 
     <LitStr> ";" => ast::Stmt::Trace(<>),
 
+    "let" <VarName> "=" <Expr> ";" => ast::Stmt::Let(<>),
+
     "wait" <Expr> ";" => ast::Stmt::Wait(<>),
 
     <Expr> "<-" <Expr> ";" => ast::Stmt::SendMsg(<>),
 
     "->" <f:FunCall> => ast::Stmt::TailCall(f.0, f.1),
+
+    "spawn" <f:FunCall> ";" => ast::Stmt::Spawn(f.0, f.1),
 
     ";" => ast::Stmt::Empty,
 };
@@ -150,7 +154,9 @@ extern {
         "from" => Tok::KwFrom,
         "given" => Tok::KwGiven,
         "if" => Tok::KwIf,
+        "let" => Tok::KwLet,
         "listen" => Tok::KwListen,
+        "spawn" => Tok::KwSpawn,
         "then" => Tok::KwThen,
         "trace" => Tok::KwTrace,
         "trap" => Tok::KwTrap,

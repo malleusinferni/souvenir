@@ -10,6 +10,7 @@ pub struct TokErr {
 pub enum ErrReason {
     UnrecognizedToken,
     InvalidStringLiteral,
+    InvalidNumberLiteral,
     InvalidCamelCase,
     InvalidSnakeCase,
     InvalidScreamingCase,
@@ -28,7 +29,9 @@ pub enum Tok<'input> {
     KwFrom,
     KwGiven,
     KwIf,
+    KwLet,
     KwListen,
+    KwSpawn,
     KwThen,
     KwTrace,
     KwTrap,
@@ -244,7 +247,9 @@ impl<'input> Tokenizer<'input> {
             "from" => Tok::KwFrom,
             "given" => Tok::KwGiven,
             "if" => Tok::KwIf,
+            "let" => Tok::KwLet,
             "listen" => Tok::KwListen,
+            "spawn" => Tok::KwSpawn,
             "then" => Tok::KwThen,
             "trace" => Tok::KwTrace,
             "trap" => Tok::KwTrap,
@@ -295,7 +300,20 @@ impl<'input> Tokenizer<'input> {
 
     fn number(&mut self, start: usize) -> TokResult<Tok<'input>> {
         let mut end = start;
-        unimplemented!()
+        while let Some((i, c)) = self.lookahead {
+            if c.is_alphabetic() {
+                return error(ErrReason::InvalidNumberLiteral, i);
+            }
+
+            // FIXME: Doesn't handle rolls
+
+            end = i;
+            if c != '_' && !c.is_digit(10) { break; }
+            self.bump();
+        }
+
+        let contents = &self.text[start .. end];
+        Ok((start, Tok::LitInt(contents), end))
     }
 }
 
