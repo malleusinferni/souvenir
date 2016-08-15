@@ -59,6 +59,7 @@ pub enum Tok<'input> {
     Pipe,
     Hole,
     Knot,
+    Divert,
 
     LParen,
     RParen,
@@ -144,6 +145,11 @@ impl<'input> Tokenizer<'input> {
                     Some((_, '-')) => {
                         let i_n = self.take_until(|c| c == '\n').unwrap();
                         Some(Ok((i0, Tok::EndLn, i_n)))
+                    },
+
+                    Some((i1, '>')) => {
+                        self.bump();
+                        Some(Ok((i0, Tok::Divert, i1 + 1)))
                     },
 
                     _ => Some(Ok((i0, Tok::OpSub, i0 + 1))),

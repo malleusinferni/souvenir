@@ -1,6 +1,7 @@
 use ast;
+use tokenizer::{Tok, TokErr};
 
-grammar;
+grammar<'input>(text: &'input str);
 
 pub Module: ast::Module = {
     <Knot*> => ast::Module {
@@ -10,47 +11,51 @@ pub Module: ast::Module = {
 };
 
 pub Knot: ast::Knot = {
-    "==" <label:FuncName> <args:ArgList?> <body:Statement*> => ast::Knot {
-        name: label,
+    "==" <name:FuncName> <args:ArgList?> ";" <body:Statement*> => ast::Knot {
+        name: name,
         args: args.unwrap_or_else(|| vec![]),
         body: body,
     },
 };
 
 Statement: ast::Stmt = {
-    "disarm" <Label> => {
+    "disarm" <Label> ";" => {
         ast::Stmt::Disarm(<>)
     },
 
-    "weave" <l:Label?> <body:Choice*> EndBlock => {
+    "weave" <l:Label?> ";" <body:Choice*> ";;" => {
         ast::Stmt::Weave(l.unwrap_or(ast::Label::Anonymous), body)
     },
 
-    "trap" <l:Label?> <body:Trap*> EndBlock => {
+    "trap" <l:Label?> ";" <body:Trap*> ";;" => {
         ast::Stmt::Trap(l.unwrap_or(ast::Label::Anonymous), body)
     },
 
-    "listen" <body:Trap*> EndBlock => {
+    "listen" ";" <body:Trap*> ";;" => {
         ast::Stmt::Listen(body)
     },
 
-    "trace" <Expr> => ast::Stmt::Trace(<>),
+    "trace" <Expr> ";" => ast::Stmt::Trace(<>),
 
-    "wait" <Expr> => ast::Stmt::Wait(<>),
+    <LitStr> ";" => ast::Stmt::Trace(<>),
 
-    <Expr> "<-" <Expr> => ast::Stmt::SendMsg(<>),
+    "wait" <Expr> ";" => ast::Stmt::Wait(<>),
 
-    //Eol => ast::Stmt::Empty,
+    <Expr> "<-" <Expr> ";" => ast::Stmt::SendMsg(<>),
+
+    "->" <f:FunCall> => ast::Stmt::TailCall(f.0, f.1),
+
+    ";" => ast::Stmt::Empty,
 };
 
 Choice: ast::Choice = {
-    "|" <g:ChoiceGuard> <s:LitStr> <body:Statement*> => ast::Choice {
+    "|" <g:ChoiceGuard> <s:LitStr> ";" <body:Statement*> => ast::Choice {
         guard: g,
         title: s,
         body: body,
     },
 
-    "|" "_" <body:Statement*> => ast::Choice {
+    "|" "_" ";" <body:Statement*> => ast::Choice {
         guard: ast::Expr::Hole,
         title: ast::Expr::Str(String::new()),
         body: body,
@@ -65,7 +70,7 @@ ChoiceGuard: ast::Expr = {
 };
 
 Trap: ast::Trap = {
-    "|" <p:Expr> <o:TrapSrc> <g:TrapGuard> <body:Statement*> => ast::Trap {
+    "|" <p:Expr> <o:TrapSrc> <g:TrapGuard> ";" <body:Statement*> => ast::Trap {
         pattern: p,
         guard: g,
         origin: o,
@@ -93,33 +98,28 @@ Comma<T>: Vec<T> = {
 
 ArgList: Vec<ast::Expr> = {
     "(" <Comma<VarName>> ")" => <>,
-    "(" ")" => vec![], // Do these actually have to be different?
-    "()" => vec![],
+    "(" ")" => vec![],
 };
 
-#[inline]
-Eol: () = {
-    ";" => (),
-    r"--.*\n" => (),
-    "\n" => (),
+FunCall: (ast::Label, Vec<ast::Expr>) = {
+    <f:FuncName> "(" ")" => (f, vec![]),
+    <f:FuncName> "(" <c:Comma<Expr>> ")" => (f, c),
+    <f:FuncName> => (f, vec![]),
 };
 
 Label: ast::Label = {
-    <s:r"'[a-z][a-z_]*"> => ast::Label::Explicit({
+    <s:"NmLabel"> => ast::Label::Explicit({
         s.chars().skip(1).collect::<String>()
     })
 };
 
 FuncName: ast::Label = {
-    <s:r"[a-z][a-z_]*"> => ast::Label::Explicit(s.to_string()),
+    <s:"NmFunc"> => ast::Label::Explicit(s.to_string()),
 };
 
 VarName: ast::Expr = {
-    <s:r"[A-Z][A-Za-z0-9]*"> => ast::Expr::Var(s.to_string())
+    <s:"NmVar"> => ast::Expr::Var(s.to_string())
 };
-
-#[inline]
-EndBlock = ";;";
 
 Expr: ast::Expr = {
     <VarName> => <>,
@@ -127,15 +127,71 @@ Expr: ast::Expr = {
 };
 
 LitAtom: ast::Expr = {
-    <a:r"#[a-z][a-z_]*"> => ast::Expr::Atom({
+    <a:"LitAtom"> => ast::Expr::Atom({
         a.chars().skip(1).collect::<String>()
     })
 };
 
 LitStr: ast::Expr = {
-    <s:r"> [^\n]*\n"> => ast::Expr::Str({
+    <s:"LitStr"> => ast::Expr::Str({
         s.chars().skip(2).collect::<String>()
     })
 };
+
+extern {
+    type Location = usize;
+    type Error = TokErr;
+
+    enum Tok<'input> {
+        ";" => Tok::EndLn,
+        ";;" => Tok::EndBlk,
+
+        "disarm" => Tok::KwDisarm,
+        "from" => Tok::KwFrom,
+        "given" => Tok::KwGiven,
+        "if" => Tok::KwIf,
+        "listen" => Tok::KwListen,
+        "then" => Tok::KwThen,
+        "trace" => Tok::KwTrace,
+        "trap" => Tok::KwTrap,
+        "wait" => Tok::KwWait,
+        "weave" => Tok::KwWeave,
+        "when" => Tok::KwWhen,
+
+        "NmFunc" => Tok::NmFunc(<&'input str>),
+        "NmLabel" => Tok::NmLabel(<&'input str>),
+        "NmMacro" => Tok::NmMacro(<&'input str>),
+        "NmVar" => Tok::NmVar(<&'input str>),
+
+        "LitAtom" => Tok::LitAtom(<&'input str>),
+        "LitInt" => Tok::LitInt(<&'input str>),
+        "LitRoll" => Tok::LitRoll(<&'input str>),
+        "LitStr" => Tok::LitStr(<&'input str>),
+
+        "=" => Tok::OpAssign,
+        "," => Tok::OpComma,
+        "." => Tok::OpDot,
+        "<-" => Tok::OpSend,
+
+        "*" => Tok::OpMul,
+        "/" => Tok::OpDiv,
+        "+" => Tok::OpAdd,
+        "-" => Tok::OpSub,
+
+        "|" => Tok::Pipe,
+        "_" => Tok::Hole,
+        "==" => Tok::Knot,
+        "->" => Tok::Divert,
+
+        "(" => Tok::LParen,
+        ")" => Tok::RParen,
+        "[" => Tok::LSquare,
+        "]" => Tok::RSquare,
+        "{" => Tok::LCurly,
+        "}" => Tok::RCurly,
+        "<" => Tok::LAngle,
+        ">" => Tok::RAngle,
+    }
+}
 
 // vim: ft=rust
