@@ -1,26 +1,26 @@
 //use std::fmt::{Debug, Formatter, Error};
 
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub struct Module {
     pub globals: Vec<Stmt>,
     pub knots: Vec<Knot>,
 }
 
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub struct Knot {
     pub name: Label,
     pub args: Vec<Expr>,
     pub body: Vec<Stmt>,
 }
 
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub struct Choice {
     pub guard: Expr,
     pub title: Expr,
     pub body: Vec<Stmt>,
 }
 
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub struct Trap {
     pub pattern: Expr,
     pub guard: Expr,
@@ -28,7 +28,7 @@ pub struct Trap {
     pub body: Vec<Stmt>,
 }
 
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub enum Stmt {
     Empty,
     Disarm(Label),
@@ -36,6 +36,7 @@ pub enum Stmt {
     Listen(Vec<Trap>),
     SendMsg(Expr, Expr),
     Spawn(Label, Vec<Expr>),
+    SpawnInto(Label, Vec<Expr>, Expr),
     TailCall(Label, Vec<Expr>),
     Trace(Expr),
     Trap(Label, Vec<Trap>),
@@ -43,16 +44,16 @@ pub enum Stmt {
     Weave(Label, Vec<Choice>),
 }
 
-#[derive(Debug)]
+#[derive(Clone, Debug, PartialEq)]
 pub enum Label {
     Explicit(String),
     Anonymous,
 }
 
-#[derive(Debug)]
+#[derive(Clone, Debug, PartialEq)]
 pub struct ActorID(pub u32);
 
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub enum Expr {
     Hole,
     Actor(ActorID),
@@ -63,17 +64,17 @@ pub enum Expr {
     Int(i32),
     Not(Box<Expr>),
     List(Vec<Expr>),
-    Spawn(Label, Vec<Expr>),
     Binop(Box<Expr>, Binop, Box<Expr>),
 }
 
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub enum Binop {
     Roll,
     Add,
     Sub,
     Div,
     Mul,
+    Eql,
 }
 
 impl<'input> Into<Label> for Option<&'input str> {

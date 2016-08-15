@@ -4,7 +4,7 @@ use tokenizer::{Tok, TokErr};
 grammar<'input>(text: &'input str);
 
 pub Module: ast::Module = {
-    <Knot*> => ast::Module {
+    ";"* <Knot*> => ast::Module {
         globals: vec![], // FIXME
         knots: <>,
     },
@@ -48,6 +48,10 @@ Statement: ast::Stmt = {
     "->" <f:FunCall> => ast::Stmt::TailCall(f.0, f.1),
 
     "spawn" <f:FunCall> ";" => ast::Stmt::Spawn(f.0, f.1),
+
+    "let" <v:VarName> "=" "spawn" <f:FunCall> ";" => {
+        ast::Stmt::SpawnInto(f.0, f.1, v)
+    },
 
     ";" => ast::Stmt::Empty,
 };
@@ -128,11 +132,18 @@ VarName: ast::Expr = {
 Expr: ast::Expr = {
     <VarName> => <>,
     <LitAtom> => <>,
+    <LitInt> => <>,
 };
 
 LitAtom: ast::Expr = {
     <a:"LitAtom"> => ast::Expr::Atom({
         a.chars().skip(1).collect::<String>()
+    })
+};
+
+LitInt: ast::Expr = {
+    <n:"LitInt"> => ast::Expr::Int({
+        n.parse::<i32>().expect("Can't parse int")
     })
 };
 
