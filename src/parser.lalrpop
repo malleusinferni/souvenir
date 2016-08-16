@@ -47,10 +47,12 @@ Statement: ast::Stmt = {
 
     "->" <f:FunCall> => ast::Stmt::TailCall(f.0, f.1),
 
-    "spawn" <f:FunCall> ";" => ast::Stmt::Spawn(f.0, f.1),
+    "spawn" <f:FunCall> ";" => {
+        ast::Stmt::LetSpawn(ast::Expr::Hole, f.0, f.1)
+    },
 
     "let" <v:VarName> "=" "spawn" <f:FunCall> ";" => {
-        ast::Stmt::SpawnInto(f.0, f.1, v)
+        ast::Stmt::LetSpawn(v, f.0, f.1)
     },
 
     ";" => ast::Stmt::Empty,

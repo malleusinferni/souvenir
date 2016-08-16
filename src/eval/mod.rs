@@ -93,14 +93,15 @@ impl Evaluator {
         Ok(())
     }
 
-    pub fn spawn(&mut self, label: Label, args: Vec<Expr>) -> ExecResult<()> {
-        let mut process = Process::new(self.next_actor_id.bump());
+    pub fn spawn(&mut self, label: Label, args: Vec<Expr>) -> EvalResult<ActorID> {
+        let id = self.next_actor_id.bump();
+        let mut process = Process::new(id.clone());
 
         let (knot, env) = try!(self.find_knot(label));
         try!(process.exec(knot, env, args));
         self.processes.push(process);
 
-        Ok(())
+        Ok(id)
     }
 
     pub fn choose(&mut self, i: usize) {
@@ -206,6 +207,17 @@ impl Evaluator {
                 } else {
                     panic!("Binding failed");
                 }
+            },
+
+            Stmt::LetSpawn(name, label, args) => {
+                let mut arg_values = Vec::with_capacity(args.len());
+                for arg in args {
+                    arg_values.push(try!(process.eval(arg)));
+                }
+
+                // Okay, here's the fucked up part...
+                let child_id = try!(self.spawn(label, arg_values));
+                try!(process.bind(name, Expr::Actor(child_id)));
             },
 
             Stmt::Trace(expr) => {
