@@ -9,6 +9,7 @@ pub struct Process {
     state: RunState,
     env: Env,
     traps: VecDeque<(Env, Trap)>,
+    outbuf: VecDeque<String>,
     instructions: VecDeque<Stmt>,
 }
 
@@ -21,7 +22,6 @@ pub enum RunState {
     Idling,
     OnFire(RuntimeError),
     WaitingForInput(Vec<(String, Vec<Stmt>)>),
-    ProducedOutput(String),
     SelfTerminated,
 }
 
@@ -36,6 +36,7 @@ pub enum RuntimeError {
     IllegalBinop(Expr, Binop, Expr),
     IllegalLvalue(Expr),
     DivideByZero(Expr),
+    IllegalConversion(Expr, &'static str),
 }
 
 pub type EvalResult<T> = Result<T, RuntimeError>;
@@ -47,9 +48,10 @@ pub struct Message {
 }
 
 pub struct Evaluator {
-    modules: HashMap<String, Module>,
+    modules: HashMap<String, (Env, Module)>,
     processes: Vec<Process>,
     messages: VecDeque<Message>,
+    stdout: VecDeque<String>,
     clockspeed: f32,
     next_actor_id: ActorID,
 }
@@ -63,6 +65,7 @@ impl Evaluator {
             processes: Vec::new(),
             messages: VecDeque::new(),
             clockspeed: speed,
+            stdout: VecDeque::new(),
             next_actor_id: ActorID(0),
         }
     }
@@ -81,7 +84,11 @@ impl Evaluator {
             Err(e) => return Err(format!("Parse error: {:?}", e)),
         };
 
-        self.modules.insert(name.to_owned(), module);
+        if module.globals.len() > 0 {
+            return Err(format!("Module globals not yet supported"));
+        }
+
+        self.modules.insert(name.to_owned(), (Env::new(), module));
 
         Ok(())
     }
@@ -89,11 +96,37 @@ impl Evaluator {
     pub fn spawn(&mut self, label: Label, args: Vec<Expr>) -> ExecResult<()> {
         let mut process = Process::new(self.next_actor_id.bump());
 
-        let knot = try!(self.find_knot(label));
-        try!(process.exec(knot, args));
+        let (knot, env) = try!(self.find_knot(label));
+        try!(process.exec(knot, env, args));
         self.processes.push(process);
 
         Ok(())
+    }
+
+    pub fn choose(&mut self, i: usize) {
+        for process in self.processes.iter_mut() {
+            if process.id.0 != 0 { continue; }
+
+            let options = match process.state.clone() {
+                RunState::WaitingForInput(options) => options,
+                _ => return,
+            };
+
+            let (_, mut statements) = match options.get(i) {
+                Some(s) => s.clone().into(),
+                None => return,
+            };
+
+            statements.extend(process.instructions.drain(..));
+            process.instructions = statements.into();
+            process.state = RunState::Running;
+        }
+    }
+
+    pub fn with_stdout<F: Fn(String)>(&mut self, action: F) {
+        while let Some(s) = self.stdout.pop_front() {
+            action(s);
+        }
     }
 
     pub fn dispatch(&mut self, timeslice: f32) -> RunState {
@@ -125,24 +158,30 @@ impl Evaluator {
                         continue;
                     },
 
-                    RunState::OnFire(_) => {
-                        // Keep process in queue, but don't execute
-                        self.processes.push(process);
-                        continue;
+                    RunState::Sleeping(mut n) => {
+                        n -= sleep_step;
+                        process.state = if n <= 0.0 {
+                            RunState::Running
+                        } else {
+                            RunState::Sleeping(n)
+                        };
                     },
 
-                    RunState::Sleeping(n) => {
-                        process.state = RunState::Sleeping(n - sleep_step);
-                    }
+                    RunState::Running => {
+                        self.run_once(&mut process)
+                            .unwrap_or_else(|e| process.hcf(e));
+                    },
 
                     _ => (),
                 }
 
-                self.run_once(&mut process)
-                    .unwrap_or_else(|e| process.hcf(e));
-
                 if process.id.0 == 0 {
                     main_process_state = Some(process.state.clone());
+
+                    match process.outbuf.pop_front() {
+                        Some(s) => self.stdout.push_back(s),
+                        None => (),
+                    }
                 }
 
                 self.processes.push(process);
@@ -161,9 +200,17 @@ impl Evaluator {
         match stmt {
             Stmt::Empty => (),
 
+            Stmt::Let(name, value) => {
+                if try!(process.bind(name.clone(), value)) {
+                    ()
+                } else {
+                    panic!("Binding failed");
+                }
+            },
+
             Stmt::Trace(expr) => {
                 let output = try!(process.eval(expr)).to_string();
-                process.state = RunState::ProducedOutput(output);
+                process.outbuf.push_back(output);
             },
 
             Stmt::SendMsg(dst, expr) => {
@@ -193,9 +240,14 @@ impl Evaluator {
                     arg_values.push(try!(process.eval(arg)));
                 }
 
-                let knot = try!(self.find_knot(label));
-                try!(process.exec(knot, arg_values));
+                let (knot, env) = try!(self.find_knot(label));
+                try!(process.exec(knot, env, arg_values));
                 // It SHOULD be that easy... right?
+            },
+
+            Stmt::Wait(expr) => {
+                let time = try!(process.eval(expr).and_then(|n| n.to_int()));
+                process.state = RunState::Sleeping(time as f32 / 100.0);
             },
 
             other_stmt => {
@@ -208,15 +260,17 @@ impl Evaluator {
         Ok(())
     }
 
-    fn find_knot(&self, label: Label) -> EvalResult<Knot> {
-        let module: &Module = match self.modules.values().next() {
+    fn find_knot(&self, label: Label) -> EvalResult<(Knot, Env)> {
+        // TODO: Namespaced labels
+
+        let &(ref env, ref module) = match self.modules.values().next() {
             Some(m) => m,
             None => return Err(RuntimeError::NoSuchModule),
         };
 
         for knot in module.knots.iter() {
             if knot.name == label {
-                return Ok(knot.clone());
+                return Ok((knot.clone(), env.clone()));
             }
         }
 
@@ -259,16 +313,19 @@ impl Evaluator {
 
 impl Process {
     fn new(id: ActorID) -> Self {
-        let mut env = HashMap::new();
-        env.insert("Self".to_owned(), Expr::Actor(id.clone()));
-
         Process {
             id: id,
-            env: env,
+            env: HashMap::new(),
             state: RunState::Running,
             traps: VecDeque::new(),
+            outbuf: VecDeque::new(),
             instructions: VecDeque::new(),
         }
+    }
+
+    fn reset_env(&mut self) {
+        self.env = HashMap::new();
+        self.env.insert("Self".to_owned(), Expr::Actor(self.id.clone()));
     }
 
     fn bind(&mut self, name: Expr, value: Expr) -> EvalResult<bool> {
@@ -327,7 +384,7 @@ impl Process {
         }
     }
 
-    fn exec(&mut self, knot: Knot, args: Vec<Expr>) -> EvalResult<()> {
+    fn exec(&mut self, knot: Knot, env: Env, args: Vec<Expr>) -> EvalResult<()> {
         let wanted_count = knot.args.len();
         let got_count = args.len();
         if wanted_count != got_count {
@@ -336,13 +393,15 @@ impl Process {
             });
         }
 
-        // TODO: Insert module globals
+        self.reset_env();
+        self.env.extend(env.into_iter());
 
         for (wanted, got) in knot.args.into_iter().zip(args.into_iter()) {
             try!(self.bind(wanted, got));
         }
 
         self.instructions = knot.body.into();
+        self.state = RunState::Running;
 
         Ok(())
     }
@@ -371,6 +430,13 @@ impl Expr {
             Expr::Int(0) => Ok(false),
             Expr::Int(_) => Ok(true),
             _ => Ok(true),
+        }
+    }
+
+    fn to_int(self) -> EvalResult<i32> {
+        match self {
+            Expr::Int(n) => Ok(n),
+            other => Err(RuntimeError::IllegalConversion(other, "int"))
         }
     }
 
@@ -484,6 +550,10 @@ impl From<RuntimeError> for String {
                 format!("Can't evaluate {:?} {:?} {:?}", lhs, op, rhs)
             },
 
+            RuntimeError::IllegalConversion(expr, wanted) => {
+                format!("Can't convert {:?} to {}", expr, wanted)
+            },
+
             RuntimeError::DivideByZero(expr) => {
                 format!("Can't divide {:?} by zero", expr)
             },
@@ -502,6 +572,9 @@ fn compile_example() {
     trace A
     > Value of B:
     trace B
+
+    let C = #oh_no
+    trace C
 
     trap
     | #bye from Self
