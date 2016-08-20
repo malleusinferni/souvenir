@@ -13,7 +13,16 @@ pub struct Process {
     instructions: VecDeque<Stmt>,
 }
 
-pub type Env = HashMap<String, Expr>;
+#[derive(Clone, Debug)]
+pub struct Env {
+    variables: HashMap<String, Expr>,
+}
+
+#[derive(Clone, Debug)]
+pub struct LoadedModule {
+    source: Module,
+    env: Env,
+}
 
 #[derive(Clone, Debug)]
 pub enum RunState {
@@ -29,7 +38,8 @@ pub enum RunState {
 pub enum RuntimeError {
     Unimplemented(Stmt),
     IrreducibleExpr(Expr),
-    NoSuchBinding(String),
+    FailedBinding(Expr, Expr),
+    NameNotFound(String),
     NoSuchModule,
     NoSuchKnot(Label),
     WrongNumberOfArgs(usize, usize),
@@ -48,7 +58,7 @@ pub struct Message {
 }
 
 pub struct Evaluator {
-    modules: HashMap<String, (Env, Module)>,
+    modules: HashMap<String, LoadedModule>,
     processes: Vec<Process>,
     messages: VecDeque<Message>,
     stdout: VecDeque<String>,
@@ -88,7 +98,10 @@ impl Evaluator {
             return Err(format!("Module globals not yet supported"));
         }
 
-        self.modules.insert(name.to_owned(), (Env::new(), module));
+        self.modules.insert(name.to_owned(), LoadedModule {
+            env: Env::new(),
+            source: module,
+        });
 
         Ok(())
     }
@@ -202,33 +215,29 @@ impl Evaluator {
             Stmt::Empty => (),
 
             Stmt::Let(name, value) => {
-                if try!(process.bind(name.clone(), value)) {
-                    ()
-                } else {
-                    panic!("Binding failed");
-                }
+                try!(process.env.bind(name, value));
             },
 
             Stmt::LetSpawn(name, label, args) => {
                 let mut arg_values = Vec::with_capacity(args.len());
                 for arg in args {
-                    arg_values.push(try!(process.eval(arg)));
+                    arg_values.push(try!(process.env.eval(arg)));
                 }
 
                 // Okay, here's the fucked up part...
                 let child_id = try!(self.spawn(label, arg_values));
-                try!(process.bind(name, Expr::Actor(child_id)));
+                try!(process.env.bind(name, Expr::Actor(child_id)));
             },
 
             Stmt::Trace(expr) => {
-                let output = try!(process.eval(expr)).to_string();
+                let output = try!(process.env.eval(expr)).to_string();
                 process.outbuf.push_back(output);
             },
 
             Stmt::SendMsg(dst, expr) => {
-                let body = try!(process.eval(expr));
+                let body = try!(process.env.eval(expr));
 
-                let dst = match try!(process.eval(dst)) {
+                let dst = match try!(process.env.eval(dst)) {
                     Expr::Actor(aid) => aid,
                     val => return Err(RuntimeError::IllegalLvalue(val)),
                 };
@@ -249,7 +258,7 @@ impl Evaluator {
                 // Do this first so they evaluate in the current env
                 let mut arg_values = Vec::with_capacity(args.len());
                 for arg in args {
-                    arg_values.push(try!(process.eval(arg)));
+                    arg_values.push(try!(process.env.eval(arg)));
                 }
 
                 let (knot, env) = try!(self.find_knot(label));
@@ -258,7 +267,9 @@ impl Evaluator {
             },
 
             Stmt::Wait(expr) => {
-                let time = try!(process.eval(expr).and_then(|n| n.to_int()));
+                let time = try!({
+                    process.env.eval(expr).and_then(|n| n.to_int())
+                });
                 process.state = RunState::Sleeping(time as f32 / 100.0);
             },
 
@@ -275,14 +286,14 @@ impl Evaluator {
     fn find_knot(&self, label: Label) -> EvalResult<(Knot, Env)> {
         // TODO: Namespaced labels
 
-        let &(ref env, ref module) = match self.modules.values().next() {
+        let module = match self.modules.values().next() {
             Some(m) => m,
             None => return Err(RuntimeError::NoSuchModule),
         };
 
-        for knot in module.knots.iter() {
+        for knot in module.source.knots.iter() {
             if knot.name == label {
-                return Ok((knot.clone(), env.clone()));
+                return Ok((knot.clone(), module.env.clone()));
             }
         }
 
@@ -290,34 +301,26 @@ impl Evaluator {
     }
 
     fn deliver(&mut self, message: Message, process: &mut Process) {
-        use std::mem;
-
-        let traps = process.traps.clone();
-        for (mut env, trap) in traps {
-            mem::swap(&mut env, &mut process.env);
-
-            match process.bind(trap.pattern, message.body.clone()) {
-                Ok(true) => (),
-                _ => { process.env = env; return; },
-            };
+        for (mut env, trap) in process.traps.clone().into_iter() {
+            if env.bind(trap.pattern, message.body.clone()).is_err() {
+                continue;
+            }
 
             let src = Expr::Actor(message.src.clone());
-            match process.bind(trap.origin, src) {
+            if env.bind(trap.origin, src).is_err() {
+                continue;
+            }
+
+            match env.eval(trap.guard).and_then(|e| e.truthiness()) {
                 Ok(true) => (),
-                _ => { process.env = env; return; },
+                _ => continue,
             };
 
-            match process.eval(trap.guard) {
-                Ok(expr) => match expr.truthiness() {
-                    Ok(true) => (),
-                    _ => { process.env = env; return; },
-                },
-                _ => { process.env = env; return; },
-            };
-
+            process.env = env;
             process.traps.clear();
             process.instructions.clear();
             process.instructions.extend(trap.body.into_iter());
+            process.state = RunState::Running;
             return;
         }
     }
@@ -327,7 +330,7 @@ impl Process {
     fn new(id: ActorID) -> Self {
         Process {
             id: id,
-            env: HashMap::new(),
+            env: Env::new(),
             state: RunState::Running,
             traps: VecDeque::new(),
             outbuf: VecDeque::new(),
@@ -336,64 +339,9 @@ impl Process {
     }
 
     fn reset_env(&mut self) {
-        self.env = HashMap::new();
-        self.env.insert("Self".to_owned(), Expr::Actor(self.id.clone()));
-    }
-
-    fn bind(&mut self, name: Expr, value: Expr) -> EvalResult<bool> {
-        if !value.is_self_evaluating() {
-            return Err(RuntimeError::IrreducibleExpr(value));
-        }
-
-        match name {
-            Expr::Hole => Ok(true), // Binds nothing but matches anything
-
-            Expr::Var(ref name) if !self.env.contains_key(name) => {
-                // Name is not present, so insert it
-                self.env.insert(name.clone(), value);
-                Ok(true)
-            },
-
-            expr => {
-                self.eval(Expr::Binop(Box::new(expr), Binop::Eql, Box::new(value)))
-                    .and_then(|result| result.truthiness())
-            },
-        }
-    }
-
-    fn eval(&self, expr: Expr) -> EvalResult<Expr> {
-        if expr.is_self_evaluating() { return Ok(expr); }
-
-        match expr {
-            Expr::Not(expr) => Ok({
-                let expr = try!(self.eval(*expr));
-                let truth_value = try!(expr.truthiness());
-                if truth_value {
-                    Expr::lit_false()
-                } else {
-                    Expr::lit_true()
-                }
-            }),
-
-            Expr::List(exprs) => Ok({
-                let mut list = Vec::new();
-                for expr in exprs {
-                    list.push(try!(self.eval(expr)));
-                }
-                Expr::List(list)
-            }),
-
-            Expr::Var(v) => match self.env.get(&v) {
-                Some(value) => Ok(value.clone()),
-                None => Err(RuntimeError::NoSuchBinding(v)),
-            },
-
-            Expr::Binop(lhs, op, rhs) => {
-                op.apply(try!(self.eval(*lhs)), try!(self.eval(*rhs)))
-            },
-
-            other => Err(RuntimeError::IrreducibleExpr(other)),
-        }
+        self.env = Env::new();
+        self.env.assign("Self".to_owned(), Expr::Actor(self.id.clone()))
+            .expect("Somehow failed to bind Self");
     }
 
     fn exec(&mut self, knot: Knot, env: Env, args: Vec<Expr>) -> EvalResult<()> {
@@ -406,10 +354,10 @@ impl Process {
         }
 
         self.reset_env();
-        self.env.extend(env.into_iter());
+        self.env.variables.extend(env.variables.into_iter());
 
         for (wanted, got) in knot.args.into_iter().zip(args.into_iter()) {
-            try!(self.bind(wanted, got));
+            try!(self.env.bind(wanted, got));
         }
 
         self.instructions = knot.body.into();
@@ -420,6 +368,104 @@ impl Process {
 
     fn hcf(&mut self, err: RuntimeError) {
         self.state = RunState::OnFire(err);
+    }
+}
+
+impl Env {
+    fn new() -> Self {
+        Env { variables: HashMap::new(), }
+    }
+
+    fn assign(&mut self, name: String, value: Expr) -> EvalResult<()> {
+        if !value.is_self_evaluating() {
+            return Err(RuntimeError::IrreducibleExpr(value));
+        }
+
+        self.variables.insert(name, value);
+        Ok(())
+    }
+
+    fn eval(&self, expr: Expr) -> EvalResult<Expr> {
+        if expr.is_self_evaluating() { return Ok(expr); }
+
+        match expr {
+            Expr::Not(value) => Ok({
+                let bool_value = try!({
+                    self.eval(*value).and_then(|b| b.truthiness())
+                });
+
+                if bool_value {
+                    Expr::lit_false()
+                } else {
+                    Expr::lit_true()
+                }
+            }),
+
+            Expr::List(exprs) => Ok({
+                let mut list = Vec::with_capacity(exprs.len());
+                for expr in exprs {
+                    list.push(try!(self.eval(expr)));
+                }
+                Expr::List(list)
+            }),
+
+            Expr::Var(v) => match self.variables.get(&v) {
+                Some(value) => Ok(value.clone()),
+                None => Err(RuntimeError::NameNotFound(v)),
+            },
+
+            Expr::Binop(lhs, op, rhs) => {
+                op.apply(try!(self.eval(*lhs)), try!(self.eval(*rhs)))
+            },
+
+            other => Err(RuntimeError::IrreducibleExpr(other)),
+        }
+    }
+
+    /// Attempt to pattern match `name` with `value`. Existing bindings will be
+    /// checked for equality rather than shadowed.
+    fn bind(&mut self, name: Expr, value: Expr) -> EvalResult<()> {
+        if !value.is_self_evaluating() {
+            return Err(RuntimeError::IrreducibleExpr(value));
+        }
+
+        match name {
+            Expr::Hole => Ok(()),
+
+            Expr::Var(ref name) if !self.variables.contains_key(name) => {
+                self.variables.insert(name.clone(), value);
+                Ok(())
+            },
+
+            Expr::List(names) => match value {
+                Expr::List(values) => {
+                    let nc = names.len();
+                    let vc = values.len();
+                    if nc != vc {
+                        return Err(RuntimeError::WrongNumberOfArgs(nc, vc));
+                    }
+
+                    for (n, v) in names.into_iter().zip(values.into_iter()) {
+                        try!(self.bind(n, v));
+                    }
+                    Ok(())
+                },
+
+                other => Err({
+                    RuntimeError::FailedBinding(Expr::List(names), other)
+                }),
+            },
+
+            other => {
+                let lhs = Box::new(other.clone());
+                let rhs = Box::new(value.clone());
+                match try!(self.eval(Expr::Binop(lhs, Binop::Eql, rhs))) {
+                    Expr::Int(1) => Ok(()),
+
+                    _ => Err(RuntimeError::FailedBinding(other, value)),
+                }
+            },
+        }
     }
 }
 
@@ -542,12 +588,16 @@ impl From<RuntimeError> for String {
                 format!("This expression can't be evaluated: {:?}", expr)
             },
 
-            RuntimeError::NoSuchBinding(name) => {
+            RuntimeError::NameNotFound(name) => {
                 format!("The variable {:?} couldn't be found", name)
             },
 
             RuntimeError::NoSuchKnot(name) => {
                 format!("Can't find the knot {:?}", name)
+            },
+
+            RuntimeError::FailedBinding(name, value) => {
+                format!("Can't assign {:?} to {:?}", value, name)
             },
 
             RuntimeError::IllegalLvalue(v) => {
