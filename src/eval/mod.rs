@@ -121,19 +121,21 @@ impl Evaluator {
         for process in self.processes.iter_mut() {
             if process.id.0 != 0 { continue; }
 
-            let options = match process.state.clone() {
+            let mut options = match process.state.clone() {
                 RunState::WaitingForInput(options) => options,
                 _ => return,
             };
 
-            let (_, mut statements) = match options.get(i) {
-                Some(s) => s.clone().into(),
-                None => return,
-            };
+            if i >= options.len() {
+                println!("BAD CHOICE: {}", i);
+                return;
+            }
 
-            statements.extend(process.instructions.drain(..));
-            process.instructions = statements.into();
+            let (_, statements) = options.swap_remove(i);
+            process.unshift(statements);
             process.state = RunState::Running;
+
+            return;
         }
     }
 
@@ -273,6 +275,36 @@ impl Evaluator {
                 process.state = RunState::Sleeping(time as f32 / 100.0);
             },
 
+            Stmt::Weave(_label, choices) => {
+                let mut menu = Vec::with_capacity(choices.len());
+                let mut queue = VecDeque::from(choices);
+                while let Some(choice) = queue.pop_front() {
+                    let test = match choice.guard {
+                        Expr::Hole if menu.is_empty() && queue.is_empty() => {
+                            true
+                        },
+
+                        other => try!(process.env.eval(other).and_then(|g| {
+                            g.truthiness()
+                        })),
+                    };
+
+                    if !test { continue; }
+
+                    let title = try!(process.env.eval(choice.title));
+                    menu.push((title.to_string(), choice.body));
+                }
+
+                if menu.len() > 1 {
+                    process.state = RunState::WaitingForInput(menu);
+                } else {
+                    match menu.into_iter().next() {
+                        Some((_, statements)) => process.unshift(statements),
+                        None => (),
+                    }
+                }
+            },
+
             other_stmt => {
                 process.state = RunState::OnFire({
                     RuntimeError::Unimplemented(other_stmt)
@@ -364,6 +396,19 @@ impl Process {
         self.state = RunState::Running;
 
         Ok(())
+    }
+
+    fn unshift(&mut self, statements: Vec<Stmt>) {
+        if statements.is_empty() { return; }
+
+        let mut queue = VecDeque::with_capacity({
+            statements.len() + self.instructions.len()
+        });
+
+        queue.extend(statements.into_iter());
+        queue.extend(self.instructions.drain(..));
+
+        self.instructions.append(&mut queue);
     }
 
     fn hcf(&mut self, err: RuntimeError) {

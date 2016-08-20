@@ -3,6 +3,7 @@ extern crate souvenir;
 use std::fs::File;
 use std::io::Read;
 use std::path::Path;
+use std::time::Duration;
 
 fn main() {
     use souvenir::eval::*;
@@ -39,12 +40,27 @@ fn main() {
     supervisor.spawn(start, vec![]).expect("Can't start process");
 
     loop {
-        match supervisor.dispatch(1.0) {
-            RunState::Running => (),
-            RunState::Sleeping(_) => (),
+        let state = supervisor.dispatch(0.25);
+        supervisor.with_stdout(|s| {
+            let millis = s.len() * 25;
+            println!("{}\n", s);
+            std::thread::sleep(Duration::from_millis(millis as u64));
+        });
 
-            RunState::Idling => return,
-            RunState::SelfTerminated => return,
+        match state {
+            RunState::Running | RunState::Sleeping(_) => {
+                std::thread::sleep(Duration::from_millis(250));
+            },
+
+            RunState::Idling => {
+                println!("Good end (?)");
+                return;
+            },
+
+            RunState::SelfTerminated => {
+                println!("Bad end (?)");
+                return;
+            },
 
             RunState::OnFire(e) => {
                 let string: String = e.into();
@@ -68,7 +84,5 @@ fn main() {
                 });
             },
         }
-
-        supervisor.with_stdout(|s| println!("{}\n", s));
     }
 }

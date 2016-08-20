@@ -1,0 +1,55 @@
+== start
+
+> [INDIE ROCK MUSIC PLAYING IN THE DISTANCE]
+wait 100
+
+> Well, professor Eileen's lecture was interesting.
+> But to be honest, I couldn't concentrate on it very much.
+> I had a lot of other thoughts on my mind.
+> And they all ended up with a question.
+wait 100
+
+> [SCENE CHANGE: UNIVERSITY]
+wait 100
+
+> When we came out of the university, I saw her.
+> She was a wonderful person.
+> I've known her ever since we were children.
+> And she's always been a good friend.
+wait 100
+
+> But... recently...
+> I think that I wanted more.
+> More than just talking...
+> More than just walking home together after class.
+> And I decided...
+
+weave
+| > ...to ask her right away.
+    -> rightaway
+| > ...to ask her later.
+    -> later
+;;
+
+== later
+
+> And so I decided to ask her later.
+> But I was indecisive.
+> I couldn't ask her that day, and I couldn't ask her later.
+> I guess I am forever alone.
+
+== rightaway
+
+> "Oh, hi," she smiled. "Shall we walk home together?"
+> "Yes..." I said, my voice already shaking.
+wait 100
+
+> We reached the meadows just outside our hometown.
+> Autumn was so beautiful here.
+> When we were children, we often played here.
+wait 100
+
+> "Hey... um..."
+wait 100
+
+-- TODO: Finish this part
