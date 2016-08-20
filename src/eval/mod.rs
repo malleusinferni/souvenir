@@ -8,7 +8,7 @@ pub struct Process {
     id: ActorID,
     state: RunState,
     env: Env,
-    traps: VecDeque<(Env, Trap)>,
+    traps: VecDeque<(Label, Env, Trap)>,
     outbuf: VecDeque<String>,
     instructions: VecDeque<Stmt>,
 }
@@ -251,9 +251,9 @@ impl Evaluator {
                 });
             },
 
-            Stmt::Trap(_, traps) => for trap in traps {
+            Stmt::Trap(label, traps) => for trap in traps {
                 let env = process.env.clone();
-                process.traps.push_front((env, trap));
+                process.traps.push_front((label.clone(), env, trap));
             },
 
             Stmt::TailCall(label, args) => {
@@ -305,7 +305,13 @@ impl Evaluator {
                 }
             },
 
-            other_stmt => {
+            Stmt::Disarm(label) => {
+                process.traps.retain(|&(ref trap_label, _, _)| {
+                    trap_label != &label
+                });
+            },
+
+            other_stmt@Stmt::Listen(_) => {
                 process.state = RunState::OnFire({
                     RuntimeError::Unimplemented(other_stmt)
                 });
@@ -333,7 +339,7 @@ impl Evaluator {
     }
 
     fn deliver(&mut self, message: Message, process: &mut Process) {
-        for (mut env, trap) in process.traps.clone().into_iter() {
+        for (_, mut env, trap) in process.traps.clone().into_iter() {
             if env.bind(trap.pattern, message.body.clone()).is_err() {
                 continue;
             }
