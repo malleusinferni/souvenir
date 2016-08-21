@@ -45,9 +45,13 @@ pub enum Stmt {
 
 #[derive(Clone, Debug, PartialEq)]
 pub enum Label {
-    Explicit(String),
+    Qualified(Modpath, String),
+    Local(String),
     Anonymous,
 }
+
+#[derive(Clone, Debug, PartialEq)]
+pub struct Modpath(pub String);
 
 #[derive(Clone, Debug, PartialEq)]
 pub struct ActorID(pub u32);
@@ -80,7 +84,7 @@ impl<'input> Into<Label> for Option<&'input str> {
     fn into(self) -> Label {
         match self {
             None => Label::Anonymous,
-            Some(s) => Label::Explicit(s.to_owned()),
+            Some(s) => Label::Local(s.to_owned()),
         }
     }
 }

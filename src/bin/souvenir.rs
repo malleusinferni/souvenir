@@ -36,7 +36,7 @@ fn main() {
     let mut supervisor = Evaluator::new(100.0);
     supervisor.compile(stem, &source).expect("Compile error");
 
-    let start = souvenir::ast::Label::Explicit("start".to_owned());
+    let start = souvenir::ast::Label::Local("start".to_owned());
     supervisor.spawn(start, vec![]).expect("Can't start process");
 
     loop {

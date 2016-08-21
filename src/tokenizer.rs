@@ -53,6 +53,7 @@ pub enum Tok<'input> {
     OpComma,
     OpDot,
     OpSend,
+    OpColon,
 
     OpMul,
     OpDiv,
@@ -198,6 +199,7 @@ impl<'input> Tokenizer<'input> {
                 '|' => { self.bump(); Some(Ok((i0, Tok::Pipe, i0 + 1))) },
                 ',' => { self.bump(); Some(Ok((i0, Tok::OpComma, i0 + 1))) },
                 '.' => { self.bump(); Some(Ok((i0, Tok::OpDot, i0 + 1))) },
+                ':' => { self.bump(); Some(Ok((i0, Tok::OpColon, i0 + 1))) },
 
                 '(' => { self.bump(); Some(Ok((i0, Tok::LParen, i0 + 1))) },
                 ')' => { self.bump(); Some(Ok((i0, Tok::RParen, i0 + 1))) },

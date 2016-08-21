@@ -701,7 +701,7 @@ fn compile_example() {
     > Doing great
     "#;
 
-    let start = Label::Explicit("start".to_owned());
+    let start = Label::Local("start".to_owned());
 
     let mut evaluator = Evaluator::new(100.0);
     evaluator.compile("main", src).expect("Compile error");

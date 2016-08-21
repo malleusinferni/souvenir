@@ -118,13 +118,27 @@ FunCall: (ast::Label, Vec<ast::Expr>) = {
 };
 
 Label: ast::Label = {
-    <s:"NmLabel"> => ast::Label::Explicit({
+    <s:"NmLabel"> => ast::Label::Local({
         s.chars().skip(1).collect::<String>()
     })
 };
 
 FuncName: ast::Label = {
-    <s:"NmFunc"> => ast::Label::Explicit(s.to_string()),
+    <p:(<"NmFunc"> ":")*> <s:"NmFunc"> => {
+        let name = s.to_string();
+        let mut path_segs = p.into_iter();
+        match path_segs.next() {
+            None => ast::Label::Local(name),
+            Some(seg) => {
+                let mut path = String::from(seg);
+                for seg in path_segs {
+                    path.push(':');
+                    path.push_str(seg);
+                }
+                ast::Label::Qualified(ast::Modpath(path), name)
+            },
+        }
+    },
 };
 
 VarName: ast::Expr = {
@@ -191,6 +205,7 @@ extern {
         "," => Tok::OpComma,
         "." => Tok::OpDot,
         "<-" => Tok::OpSend,
+        ":" => Tok::OpColon,
 
         "*" => Tok::OpMul,
         "/" => Tok::OpDiv,
