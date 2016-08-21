@@ -1,5 +1,7 @@
 //! Defines an AST evaluator.
 
+pub mod rem;
+
 use std::collections::{HashMap, VecDeque};
 
 use ast::*;

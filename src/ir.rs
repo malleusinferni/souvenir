@@ -1,12 +1,21 @@
-#[derive(Copy, Clone, Debug)]
+#[derive(Copy, Clone, Debug, Eq, PartialEq)]
 pub enum Op {
     Nop,
 
-    Add(Reg, Reg),
-    Sub(Reg, Reg),
-    Mul(Reg, Reg),
-    Div(Reg, Reg),
-    Roll(Reg, Reg),
+    /// r3 = r1 + r2
+    Add(Reg, Reg, Reg),
+
+    /// r3 = r1 - r2
+    Sub(Reg, Reg, Reg),
+
+    /// r3 = r1 * r2
+    Mul(Reg, Reg, Reg),
+
+    /// r3 = r1 / r2
+    Div(Reg, Reg, Reg),
+
+    /// Roll r1-sided dice, r2 times, then sum and store in r3
+    Roll(Reg, Reg, Reg),
 
     /// Initialize register with literal value.
     Init(Val, Reg),
@@ -17,7 +26,10 @@ pub enum Op {
     /// Initialize register conditionally.
     Phi(Reg, Reg, Reg),
 
-    /// Set test flags.
+    /// Compare two values.
+    Cmp(Reg, Reg),
+
+    /// "Compare" a single value.
     Test(Reg),
 
     /// Write flag check to register.
@@ -77,7 +89,7 @@ pub enum Op {
     Hcf,
 }
 
-#[derive(Copy, Clone, Debug)]
+#[derive(Copy, Clone, Debug, Eq, PartialEq)]
 pub enum Reg {
     Mod(u32),
     Var(u32),
@@ -86,7 +98,7 @@ pub enum Reg {
     Discard,
 }
 
-#[derive(Copy, Clone, Debug)]
+#[derive(Copy, Clone, Debug, Eq, PartialEq)]
 pub enum Cond {
     /// Always true.
     True,
@@ -101,12 +113,11 @@ pub enum Cond {
     Negative,
 }
 
-#[derive(Copy, Clone, Debug)]
+#[derive(Copy, Clone, Debug, Eq, PartialEq, Hash)]
 pub struct Label(u32);
 
-#[derive(Copy, Clone, Debug)]
+#[derive(Copy, Clone, Debug, Eq, PartialEq)]
 pub enum Val {
-    Undef,
     Int(i32),
     Strid(u32),
     Atom(u32),
