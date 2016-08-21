@@ -2,6 +2,7 @@ pub mod ast;
 pub mod parser;
 pub mod tokenizer;
 pub mod eval;
+pub mod ir;
 
 #[cfg(test)]
 mod tests {
