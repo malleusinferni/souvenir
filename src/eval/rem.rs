@@ -1,5 +1,7 @@
 use std::collections::{HashMap, HashSet};
 
+use rand::Rng;
+
 use ir::*;
 
 pub struct Process {
@@ -16,13 +18,15 @@ pub struct Process {
     visits: HashMap<Label, i32>,
 }
 
-pub struct Supervisor {
+pub struct Supervisor<R: Rng> {
     atoms: HashMap<u32, String>,
     strings: HashMap<u32, String>,
     code: Vec<Op>,
     labels: HashMap<Label, usize>,
+    argspecs: HashMap<Label, Vec<u32>>,
     modenv: HashMap<u32, ModEnv>,
     outbox: Vec<Message>,
+    rng: R,
 }
 
 mod bits {
@@ -56,14 +60,17 @@ pub enum RunErr {
     Unwritable(Reg),
     UnimplementedOp(Op),
     UnimplementedBinop(Binop),
+    BadAddress(Label),
+    ArgCountMismatch(usize, usize),
     ArithOverflow,
+    DivideByZero,
     IllegalAdd,
     IllegalCmp,
     NotAnActor,
     UserErr,
 }
 
-impl Supervisor {
+impl<R: Rng> Supervisor<R> {
     pub fn run(&mut self, process: &mut Process) -> RunResult<()> {
         assert_eq!(process.state, State::Running);
 
@@ -94,6 +101,36 @@ impl Supervisor {
                     },
 
                     (Add, _, _) => return Err(RunErr::IllegalAdd),
+
+                    (Sub, Int(a), Int(b)) => match a.checked_sub(b) {
+                        Some(c) => Int(c),
+                        None => return Err(RunErr::ArithOverflow),
+                    },
+
+                    (Mul, Int(a), Int(b)) => match a.checked_mul(b) {
+                        Some(c) => Int(c),
+                        None => return Err(RunErr::ArithOverflow),
+                    },
+
+                    (Div, Int(_), Int(0)) => {
+                        return Err(RunErr::DivideByZero);
+                    },
+
+                    (Div, Int(a), Int(b)) => match a.checked_div(b) {
+                        Some(c) => Int(c),
+                        None => return Err(RunErr::ArithOverflow),
+                    },
+
+                    (Roll, Int(c), Int(s)) => {
+                        use rand::distributions::{Range, IndependentSample};
+
+                        let range = Range::new(0, s);
+                        let mut total = 0;
+                        for _ in 0 .. c {
+                            total += range.ind_sample(&mut self.rng);
+                        }
+                        Int(total)
+                    },
 
                     _ => return Err(RunErr::UnimplementedBinop(bop)),
                 };
@@ -228,19 +265,32 @@ impl Supervisor {
             Op::Tail(label) => {
                 let args: Vec<_> = process.buf.drain(..).collect();
 
-                // TODO: Search for label
-                // TODO: Make sure label accepts args
-                // TODO: Check arg length
+                let address = try!(self.labels.get(&label).ok_or({
+                    RunErr::BadAddress(label)
+                }));
+
+                let argspec = self.argspecs.get(&label)
+                    .cloned()
+                    .unwrap_or_else(|| vec![]);
+
+                let wc = argspec.len();
+                let gc = args.len();
+                if wc != gc {
+                    return Err(RunErr::ArgCountMismatch(wc, gc));
+                }
 
                 process.tmp.clear();
                 process.var.clear();
                 process.traps.clear();
 
-                // TODO: Bind args to var names
+                for (name, value) in argspec.into_iter().zip(args.into_iter()) {
+                    process.var.insert(name, value);
+                }
 
-                process.pc = label.0;
+                // TODO: Set module
+                // TODO: Insert module-level traps
 
-                unimplemented!();
+                process.visit(label);
             },
 
             // TODO: Op::Trap
@@ -347,6 +397,11 @@ impl Process {
             Cond::Negative => self.cond & bits::NEG,
             Cond::Positive => self.cond & bits::POS,
         }
+    }
+
+    fn visit(&mut self, label: Label) {
+        *self.visits.entry(label).or_insert(0) += 1;
+        self.pc = label.0;
     }
 }
 

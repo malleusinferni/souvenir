@@ -84,10 +84,19 @@ pub enum Op {
 
 #[derive(Copy, Clone, Debug, Eq, PartialEq)]
 pub enum Reg {
+    /// Module-level global variable.
     Mod(u32),
+
+    /// Argument or local variable.
     Var(u32),
+
+    /// Temporary variable.
     Tmp(u32),
+
+    /// The `Self` variable.
     MyAid,
+
+    /// The `_` variable ("hole").
     Discard,
 }
 
