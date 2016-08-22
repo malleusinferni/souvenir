@@ -13,6 +13,7 @@ pub struct Process {
     var: HashMap<u32, Val>,
     tmp: HashMap<u32, Val>,
     traps: HashSet<Label>,
+    visits: HashMap<Label, i32>,
 }
 
 pub struct Supervisor {
@@ -213,7 +214,10 @@ impl Supervisor {
                 }
             },
 
-            // Count
+            Op::Count(label, dst) => {
+                let count = process.visits.get(&label).cloned().unwrap_or(0);
+                try!(self.store(dst, process, Val::Int(count)));
+            },
 
             Op::Spawn(label, dst) => {
                 let args = process.buf.drain(..).collect();
@@ -221,9 +225,27 @@ impl Supervisor {
                 try!(self.store(dst, process, Val::Aid(pid)));
             },
 
-            // Tail
-            // Trap
-            // Untrap
+            Op::Tail(label) => {
+                let args: Vec<_> = process.buf.drain(..).collect();
+
+                // TODO: Search for label
+                // TODO: Make sure label accepts args
+                // TODO: Check arg length
+
+                process.tmp.clear();
+                process.var.clear();
+                process.traps.clear();
+
+                // TODO: Bind args to var names
+
+                process.pc = label.0;
+
+                unimplemented!();
+            },
+
+            // TODO: Op::Trap
+
+            // TODO: Op::Untrap
 
             Op::Bye => { process.state = State::Dead; }
 
@@ -307,6 +329,7 @@ impl Process {
             var: HashMap::with_capacity(32),
             tmp: HashMap::with_capacity(32),
             traps: HashSet::with_capacity(8),
+            visits: HashMap::with_capacity(32),
         }
     }
 
