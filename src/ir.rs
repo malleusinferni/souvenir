@@ -1,24 +1,17 @@
+pub use ast::ActorID;
+
 #[derive(Copy, Clone, Debug, Eq, PartialEq)]
 pub enum Op {
     Nop,
 
-    /// r3 = r1 + r2
-    Add(Reg, Reg, Reg),
+    /// r3 = bop(r1, r2)
+    Binop(Binop, Reg, Reg, Reg),
 
-    /// r3 = r1 - r2
-    Sub(Reg, Reg, Reg),
+    /// Initialize register with int value.
+    LitInt(i32, Reg),
 
-    /// r3 = r1 * r2
-    Mul(Reg, Reg, Reg),
-
-    /// r3 = r1 / r2
-    Div(Reg, Reg, Reg),
-
-    /// Roll r1-sided dice, r2 times, then sum and store in r3
-    Roll(Reg, Reg, Reg),
-
-    /// Initialize register with literal value.
-    Init(Val, Reg),
+    /// Initialize register with string value.
+    LitStr(u32, Reg),
 
     /// Copy one register to another.
     Mov(Reg, Reg),
@@ -83,7 +76,7 @@ pub enum Op {
     Untrap(Label),
 
     /// Shut down the current process.
-    Graceful,
+    Bye,
 
     /// Halt and catch fire.
     Hcf,
@@ -96,6 +89,15 @@ pub enum Reg {
     Tmp(u32),
     MyAid,
     Discard,
+}
+
+#[derive(Copy, Clone, Debug, Eq, PartialEq)]
+pub enum Binop {
+    Add,
+    Mul,
+    Sub,
+    Div,
+    Roll,
 }
 
 #[derive(Copy, Clone, Debug, Eq, PartialEq)]
@@ -114,13 +116,14 @@ pub enum Cond {
 }
 
 #[derive(Copy, Clone, Debug, Eq, PartialEq, Hash)]
-pub struct Label(u32);
+pub struct Label(pub u32);
 
-#[derive(Copy, Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Debug, Eq, PartialEq)]
 pub enum Val {
     Int(i32),
     Strid(u32),
     Atom(u32),
-    Aid(u32),
-    Bid(u32),
+    Aid(ActorID),
+    List(Vec<Val>),
+    Strseq(Vec<Val>),
 }

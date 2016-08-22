@@ -5,7 +5,7 @@ use ir::*;
 pub struct Process {
     state: State,
     module: u32,
-    id: u32,
+    id: ActorID,
     pc: u32,
     cond: u8,
     menu: Vec<(Label, String)>,
@@ -17,11 +17,11 @@ pub struct Process {
 
 pub struct Supervisor {
     atoms: HashMap<u32, String>,
-    lists: HashMap<u32, Vec<Val>>,
     strings: HashMap<u32, String>,
     code: Vec<Op>,
-    labels: HashMap<Label, u32>,
+    labels: HashMap<Label, usize>,
     modenv: HashMap<u32, ModEnv>,
+    outbox: Vec<Message>,
 }
 
 mod bits {
@@ -40,6 +40,12 @@ enum State {
     Dead,
 }
 
+pub struct Message {
+    src: ActorID,
+    dst: ActorID,
+    body: Vec<Val>,
+}
+
 pub type RunResult<T> = Result<T, RunErr>;
 
 #[derive(Debug, Eq, PartialEq)]
@@ -48,8 +54,12 @@ pub enum RunErr {
     Uninitialized(Reg),
     Unwritable(Reg),
     UnimplementedOp(Op),
+    UnimplementedBinop(Binop),
     ArithOverflow,
-    IllegalAdd(Val, Val),
+    IllegalAdd,
+    IllegalCmp,
+    NotAnActor,
+    UserErr,
 }
 
 impl Supervisor {
@@ -58,6 +68,50 @@ impl Supervisor {
 
         match try!(self.fetch(&mut process.pc)) {
             Op::Nop => (),
+
+            Op::Binop(bop, lhs, rhs, dst) => {
+                let lhs = try!(self.check_load(lhs, process));
+                let rhs = try!(self.check_load(rhs, process));
+
+                use ir::Binop::*;
+                use ir::Val::*;
+
+                let result = match (bop, lhs, rhs) {
+                    (Add, Int(a), Int(b)) => match a.checked_add(b) {
+                        Some(c) => Int(c),
+                        None => return Err(RunErr::ArithOverflow),
+                    },
+
+                    (Add, List(mut xs), x) => {
+                        xs.push(x);
+                        List(xs)
+                    },
+
+                    (Add, Strseq(mut xs), x) => {
+                        xs.push(x);
+                        Strseq(xs)
+                    },
+
+                    (Add, _, _) => return Err(RunErr::IllegalAdd),
+
+                    _ => return Err(RunErr::UnimplementedBinop(bop)),
+                };
+
+                try!(self.store(dst, process, result));
+            },
+
+            Op::LitInt(n, dst) => {
+                try!(self.store(dst, process, Val::Int(n)));
+            },
+
+            Op::LitStr(s, dst) => {
+                try!(self.store(dst, process, Val::Strid(s)));
+            },
+
+            Op::Mov(src, dst) => {
+                let val = try!(self.check_load(src, process));
+                try!(self.store(dst, process, val));
+            },
 
             Op::Phi(lhs, rhs, dst) => {
                 let lhs = try!(self.load(lhs, process));
@@ -70,28 +124,119 @@ impl Supervisor {
                 }
             },
 
-            Op::Add(lhs, rhs, dst) => {
+            Op::Cmp(lhs, rhs) => {
                 let lhs = try!(self.check_load(lhs, process));
                 let rhs = try!(self.check_load(rhs, process));
 
                 use ir::Val::*;
 
-                let result = match (lhs, rhs) {
-                    (Int(a), Int(b)) => match a.checked_add(b) {
-                        Some(c) => Int(c),
-                        None => return Err(RunErr::ArithOverflow),
-                    },
+                match (lhs, rhs) {
+                    (Int(m), Int(n)) => process.compare(m - n),
+                    
+                    _ => return Err(RunErr::IllegalCmp),
+                }
+            },
 
-                    _ => return Err(RunErr::IllegalAdd(lhs, rhs)),
+            Op::Test(src) => {
+                let val = try!(self.check_load(src, process));
+
+                use ir::Val::*;
+
+                match val {
+                    Int(n) => process.compare(n),
+
+                    _ => return Err(RunErr::IllegalCmp),
+                }
+            },
+
+            Op::Bool(cond, dst) => {
+                let val = Val::Int(if process.test(cond) { 1 } else { 0 });
+                try!(self.store(dst, process, val));
+            },
+
+            Op::Not(cond) => {
+                match cond {
+                    Cond::True => (),
+                    Cond::Zero => process.cond ^= bits::ZERO,
+                    Cond::Negative => process.cond ^= bits::NEG,
+                    Cond::Positive => process.cond ^= bits::POS,
+                }
+            },
+
+            Op::Untemp => {
+                process.tmp.clear();
+            },
+
+            Op::Msg(dst) => {
+                let dst = try!(self.check_load(dst, process));
+                let recip_id = match dst {
+                    Val::Aid(id) => id,
+                    _ => return Err(RunErr::NotAnActor),
                 };
 
-                try!(self.store(dst, process, result));
+                let body = process.buf.drain(..).collect();
+
+                self.outbox.push(Message {
+                    src: process.id,
+                    dst: recip_id,
+                    body: body,
+                });
             },
+
+            Op::Write => { process.state = State::BlockedOnOutput; },
+
+            Op::Read => { process.state = State::BlockedOnInput; },
+
+            Op::AddMenu(label) => {
+                let mut title = String::new();
+                for val in process.buf.drain(..) {
+                    title.push_str(&val.to_string());
+                }
+                process.menu.push((label, title));
+            },
+
+            Op::CheckMenu => {
+                let n = process.menu.len() as i32;
+                process.compare(n);
+            },
+
+            Op::Push(src) => {
+                let val = try!(self.check_load(src, process));
+                process.buf.push(val);
+            },
+
+            Op::Nil => { process.buf.clear(); }
+
+            Op::Jump(cond, Label(l)) => {
+                if process.test(cond) {
+                    process.pc = l;
+                }
+            },
+
+            // Count
+
+            Op::Spawn(label, dst) => {
+                let args = process.buf.drain(..).collect();
+                let pid = try!(self.spawn(label, args));
+                try!(self.store(dst, process, Val::Aid(pid)));
+            },
+
+            // Tail
+            // Trap
+            // Untrap
+
+            Op::Bye => { process.state = State::Dead; }
+
+            Op::Hcf => { process.state = State::OnFire(RunErr::UserErr); }
 
             op => return Err(RunErr::UnimplementedOp(op)),
         }
 
         Ok(())
+    }
+
+    pub fn spawn(&self, label: Label, args: Vec<Val>) -> RunResult<ActorID> {
+        unimplemented!()
     }
 
     fn fetch(&self, pc: &mut u32) -> RunResult<Op> {
@@ -111,6 +256,7 @@ impl Supervisor {
     fn load(&self, reg: Reg, process: &Process) -> RunResult<Option<Val>> {
         match reg {
             Reg::Var(v) => Ok(process.var.get(&v).cloned()),
+
             Reg::Tmp(t) => Ok(process.tmp.get(&t).cloned()),
 
             Reg::Mod(m) => { unimplemented!() },
@@ -148,7 +294,7 @@ pub enum ModEnv {
 }
 
 impl Process {
-    fn new(id: u32) -> Self {
+    fn new(id: ActorID) -> Self {
         Process {
             id: id,
 
@@ -162,5 +308,27 @@ impl Process {
             tmp: HashMap::with_capacity(32),
             traps: HashSet::with_capacity(8),
         }
+    }
+
+    fn compare(&mut self, n: i32) {
+        self.cond = 0;
+        if n == 0 { self.cond |= bits::ZERO; }
+        if n < 0 { self.cond |= bits::NEG; }
+        if n > 0 { self.cond |= bits::POS; }
+    }
+
+    fn test(&self, cond: Cond) -> bool {
+        0 != match cond {
+            Cond::True => 1,
+            Cond::Zero => self.cond & bits::ZERO,
+            Cond::Negative => self.cond & bits::NEG,
+            Cond::Positive => self.cond & bits::POS,
+        }
+    }
+}
+
+impl Val {
+    fn to_string(&self) -> String {
+        unimplemented!()
     }
 }

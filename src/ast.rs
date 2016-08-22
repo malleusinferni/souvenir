@@ -53,7 +53,7 @@ pub enum Label {
 #[derive(Clone, Debug, PartialEq)]
 pub struct Modpath(pub String);
 
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Copy, Clone, Debug, Eq, PartialEq)]
 pub struct ActorID(pub u32);
 
 #[derive(Clone, Debug)]
