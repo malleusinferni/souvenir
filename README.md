@@ -6,3 +6,6 @@ This nasty little parasite of a language is my project to combine features of [I
 == start
 > Hello, world
 ```
+
+[ink]: https://github.com/inkle/ink
+[erlang]: http://www.erlang.org
