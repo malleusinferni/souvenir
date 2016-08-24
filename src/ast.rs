@@ -50,8 +50,8 @@ pub enum Label {
     Anonymous,
 }
 
-#[derive(Clone, Debug, PartialEq)]
-pub struct Modpath(pub String);
+#[derive(Clone, Debug, Eq, Hash, PartialEq)]
+pub struct Modpath(pub Vec<String>);
 
 #[derive(Copy, Clone, Debug, Eq, PartialEq)]
 pub struct ActorID(pub u32);

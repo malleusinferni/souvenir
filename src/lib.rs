@@ -5,6 +5,7 @@ pub mod parser;
 pub mod tokenizer;
 pub mod eval;
 pub mod ir;
+pub mod front;
 
 #[cfg(test)]
 mod tests {

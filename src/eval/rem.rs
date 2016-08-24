@@ -1,3 +1,9 @@
+//! Implements evaluation of Souvenir's intermediate representation (IR).
+//!
+//! A `Supervisor` performs execution, but the host environment owns all
+//! `Process`es and is responsible for deciding when to deliver messages and
+//! when to intercept them.
+
 use std::collections::{HashMap, HashSet};
 
 use rand::Rng;

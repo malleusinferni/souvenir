@@ -126,17 +126,11 @@ Label: ast::Label = {
 FuncName: ast::Label = {
     <p:(<"NmFunc"> ":")*> <s:"NmFunc"> => {
         let name = s.to_string();
-        let mut path_segs = p.into_iter();
-        match path_segs.next() {
-            None => ast::Label::Local(name),
-            Some(seg) => {
-                let mut path = String::from(seg);
-                for seg in path_segs {
-                    path.push(':');
-                    path.push_str(seg);
-                }
-                ast::Label::Qualified(ast::Modpath(path), name)
-            },
+        if p.is_empty() {
+            ast::Label::Local(name)
+        } else {
+            let path = p.into_iter().map(|s| s.to_string()).collect();
+            ast::Label::Qualified(ast::Modpath(path), name)
         }
     },
 };
