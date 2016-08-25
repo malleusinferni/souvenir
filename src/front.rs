@@ -183,7 +183,95 @@ impl ModuleLoader {
 
 impl Module {
     fn wanted_modules(&self) -> HashSet<Modpath> {
-        unimplemented!()
+        let mut wanted = HashSet::new();
+        for knot in self.knots.iter() {
+            for stmt in knot.body.iter() {
+                stmt.tally(&mut wanted);
+            }
+        }
+        wanted
+    }
+}
+
+impl Stmt {
+    fn tally(&self, wanted: &mut HashSet<Modpath>) {
+        match self {
+            &Stmt::Empty => (),
+
+            &Stmt::Disarm(_) => (),
+
+            &Stmt::Let(_, ref expr) => expr.tally(wanted),
+
+            &Stmt::LetSpawn(_, ref label, ref exprs) => {
+                label.tally(wanted);
+                for expr in exprs.iter() {
+                    expr.tally(wanted);
+                }
+            },
+
+            &Stmt::Listen(ref traps) => for trap in traps.iter() {
+                trap.guard.tally(wanted);
+                for stmt in trap.body.iter() {
+                    stmt.tally(wanted);
+                }
+            },
+
+            &Stmt::SendMsg(_, ref expr) => expr.tally(wanted),
+
+            &Stmt::TailCall(ref label, _) => label.tally(wanted),
+
+            &Stmt::Trace(ref expr) => expr.tally(wanted),
+
+            &Stmt::Trap(_, ref traps) => for trap in traps.iter() {
+                trap.guard.tally(wanted);
+                for stmt in trap.body.iter() {
+                    stmt.tally(wanted);
+                }
+            },
+
+            &Stmt::Wait(ref expr) => expr.tally(wanted),
+
+            &Stmt::Weave(_, ref choices) => for choice in choices.iter() {
+                choice.guard.tally(wanted);
+                choice.title.tally(wanted);
+                for stmt in choice.body.iter() {
+                    stmt.tally(wanted);
+                }
+            },
+        }
+    }
+}
+
+impl Expr {
+    fn tally(&self, wanted: &mut HashSet<Modpath>) {
+        match self {
+            &Expr::Count(ref label) => label.tally(wanted),
+
+            &Expr::Not(ref expr) => expr.tally(wanted),
+
+            &Expr::List(ref exprs) => for expr in exprs.iter() {
+                expr.tally(wanted);
+            },
+
+            &Expr::Binop(ref lhs, _, ref rhs) => {
+                lhs.tally(wanted);
+                rhs.tally(wanted);
+            },
+
+            _ => (),
+        }
+    }
+}
+
+impl Label {
+    fn tally(&self, wanted: &mut HashSet<Modpath>) {
+        match self {
+            &Label::Qualified(ref modpath, _) => {
+                wanted.insert(modpath.clone());
+            },
+
+            _ => (),
+        }
     }
 }
 
