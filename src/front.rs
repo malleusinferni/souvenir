@@ -16,6 +16,7 @@ pub struct ModuleLoader {
     search_dirs: Vec<PathBuf>,
     loaded_modules: HashMap<Modpath, Module>,
     wanted_modules: HashMap<Modpath, WantedBy>,
+    name_of_main: Option<Label>,
 }
 
 #[derive(Debug)]
@@ -38,7 +39,9 @@ pub enum CompileError {
     ParseError(String),
     MissingModules(Vec<Modpath>),
     NoModulesLoaded,
+    MainIsMissing,
     UnimplementedFeature(String),
+    CantQualifyLabel(Label),
 }
 
 pub type CompileResult<T> = Result<T, CompileError>;
@@ -90,6 +93,7 @@ impl ModuleLoaderBuilder {
             search_dirs: self.search_dirs,
             wanted_modules: wanted_modules,
             loaded_modules: HashMap::new(),
+            name_of_main: None,
         }
     }
 }
@@ -129,6 +133,16 @@ impl ModuleLoader {
             self.wanted_modules.entry(wanted_module).or_insert({
                 WantedBy::OtherModule(modpath.clone())
             });
+        }
+
+        if self.name_of_main.is_none() {
+            if let Some(knot) = module.knots.iter().next() {
+                self.name_of_main = Some({
+                    try!(knot.name.qualify(modpath.clone()))
+                });
+            } else {
+                return Err(CompileError::MainIsMissing);
+            }
         }
 
         self.loaded_modules.insert(modpath, module);
@@ -174,6 +188,8 @@ impl ModuleLoader {
         if self.loaded_modules.is_empty() {
             return Err(CompileError::NoModulesLoaded);
         }
+
+        use mid::*;
 
         let mut tree_walker = TreeWalker::new(self.loaded_modules);
 
@@ -273,16 +289,12 @@ impl Label {
             _ => (),
         }
     }
-}
 
-struct TreeWalker {
-    _phony: (),
-}
-
-impl TreeWalker {
-    fn new(modules: HashMap<Modpath, Module>) -> Self {
-        let _ = modules;
-        TreeWalker { _phony: () }
+    fn qualify(&self, modpath: Modpath) -> CompileResult<Self> {
+        match self {
+            &Label::Local(ref n) => Ok(Label::Qualified(modpath, n.clone())),
+            _ => Err(CompileError::CantQualifyLabel(self.clone())),
+        }
     }
 }
 

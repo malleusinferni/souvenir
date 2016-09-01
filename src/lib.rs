@@ -6,6 +6,7 @@ pub mod tokenizer;
 pub mod eval;
 pub mod ir;
 pub mod front;
+pub mod mid;
 
 #[cfg(test)]
 mod tests {
