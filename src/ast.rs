@@ -98,3 +98,68 @@ impl<'a> From<&'a str> for Expr {
         Expr::Str(s.to_owned())
     }
 }
+
+#[test]
+fn ast_structure() {
+    use parser;
+    use tokenizer::Tokenizer;
+
+    let src = r#"
+    == knot_name
+    weave 'foo
+    | > Option 1
+        -> dest1 -- Comment allowed here and ignored
+    | > Option 2 -- Comment included in string
+        -> dest2
+    | _
+        -> dest_default
+    ;;
+    "#;
+
+    let tokens = Tokenizer::new(src, 0);
+
+    let weave_arms = vec![
+        Choice {
+            guard: Expr::Int(1),
+            title: "Option 1".into(),
+            body: vec![
+                Stmt::TailCall(Some("dest1").into(), vec![]),
+            ],
+        },
+
+        Choice {
+            guard: Expr::Int(1),
+            title: "Option 2 -- Comment included in string".into(),
+            body: vec![
+                Stmt::TailCall(Some("dest2").into(), vec![]),
+            ],
+        },
+
+        Choice {
+            guard: Expr::Hole,
+            title: "".into(),
+            body: vec![
+                Stmt::TailCall(Some("dest_default").into(), vec![]),
+            ],
+        },
+    ];
+
+    let expected = Module {
+        globals: vec![],
+        knots: vec![Knot {
+            name: Some("knot_name").into(),
+            args: vec![],
+            body: vec![
+                Stmt::Weave(Some("foo").into(), weave_arms),
+                Stmt::Empty,
+            ],
+        }],
+    };
+
+    let parsed = parser::parse_Module(src, tokens).unwrap();
+
+    if expected == parsed { return; }
+
+    // Pretty print AST so we can compare the output
+    panic!("Expected: {:#?}\n\nGot: {:#?}", expected, parsed);
+}
