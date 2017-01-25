@@ -148,6 +148,7 @@ impl<'input> Tokenizer<'input> {
                 '-' => match self.bump() {
                     Some((_, '-')) => {
                         let i_n = self.take_until(|c| c == '\n').unwrap();
+                        self.bump();
                         Some(Ok((i0, Tok::EndLn, i_n)))
                     },
 

@@ -43,6 +43,8 @@ Statement: ast::Stmt = {
 
     "wait" <Expr> ";" => ast::Stmt::Wait(<>),
 
+    //<VarName> <Expr> ";" => ast::Stmt::SendMsg(<>),
+
     <Expr> "<-" <Expr> ";" => ast::Stmt::SendMsg(<>),
 
     "->" <f:FunCall> ";" => ast::Stmt::TailCall(f.0, f.1),

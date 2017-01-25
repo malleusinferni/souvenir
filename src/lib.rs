@@ -42,8 +42,8 @@ mod tests {
         == knot_name
         weave 'foo
         | > Option 1
-            -> dest1
-        | > Option 2
+            -> dest1 -- Comment allowed here and ignored
+        | > Option 2 -- Comment included in string
             -> dest2
         | _
             -> dest_default
@@ -65,7 +65,7 @@ mod tests {
 
             Choice {
                 guard: Expr::Int(1),
-                title: "Option 2".into(),
+                title: "Option 2 -- Comment included in string".into(),
                 body: vec![
                     Stmt::TailCall(Some("dest2").into(), vec![]),
                 ],
