@@ -1,3 +1,5 @@
+pub mod rewrite;
+
 #[derive(Clone, Debug, PartialEq)]
 pub struct Module {
     pub globals: Vec<Stmt>,
@@ -99,23 +101,25 @@ impl<'a> From<&'a str> for Expr {
     }
 }
 
+#[cfg(test)]
+pub static EXAMPLE_SRC: &'static str = r#"== knot_name
+weave 'foo
+| > Option 1
+    -> dest1 -- Comment allowed here and ignored
+| > Option 2 -- Comment included in string
+    -> dest2
+| _
+    -> dest_default
+;;
+"#;
+
 #[test]
 fn ast_structure() {
     use parser;
     use tokenizer::Tokenizer;
 
-    let src = r#"== knot_name
-    weave 'foo
-    | > Option 1
-        -> dest1 -- Comment allowed here and ignored
-    | > Option 2 -- Comment included in string
-        -> dest2
-    | _
-        -> dest_default
-    ;;
-    "#;
-
-    let tokens = Tokenizer::new(src, 0);
+    let tokens = Tokenizer::new(EXAMPLE_SRC, 0);
+    let parsed = parser::parse_Module(EXAMPLE_SRC, tokens).unwrap();
 
     let weave_arms = vec![
         Choice {
@@ -153,8 +157,6 @@ fn ast_structure() {
             ],
         }],
     };
-
-    let parsed = parser::parse_Module(src, tokens).unwrap();
 
     if expected == parsed { return; }
 

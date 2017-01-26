@@ -4,6 +4,8 @@ pub mod ast;
 pub mod parser;
 pub mod tokenizer;
 
+pub mod pass;
+
 #[test]
 fn it_works() {
     use parser;
