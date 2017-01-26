@@ -116,6 +116,20 @@ impl<'a> From<&'a str> for Expr {
     }
 }
 
+use lalrpop_util::ParseError;
+
+use tokenizer::*;
+
+pub type ParseErr<'a> = ParseError<usize, Tok<'a>, TokErr>;
+
+impl Module {
+    pub fn parse(source: &str) -> Result<Self, ParseErr> {
+        let tokens = Tokenizer::new(source, 0);
+
+        ::parser::parse_Module(source, tokens)
+    }
+}
+
 #[cfg(test)]
 pub static EXAMPLE_SRC: &'static str = r#"== knot_name
 weave 'foo
@@ -130,11 +144,7 @@ weave 'foo
 
 #[test]
 fn ast_structure() {
-    use parser;
-    use tokenizer::Tokenizer;
-
-    let tokens = Tokenizer::new(EXAMPLE_SRC, 0);
-    let parsed = parser::parse_Module(EXAMPLE_SRC, tokens).unwrap();
+    let parsed = Module::parse(EXAMPLE_SRC).unwrap();
 
     let weave_arms = vec![
         Choice {
