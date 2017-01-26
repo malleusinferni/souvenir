@@ -7,47 +7,69 @@ use ast::rewrite::*;
 pub enum NameErr {
     NotFound(String),
     ScopeUnderflow,
+    InvalidAst,
 }
 
 impl Module {
     pub fn resolve_names(self) -> Result<Self, NameErr> {
         let mut pass = Pass {
             env: Vec::new(),
+            reg: 0,
         };
 
         pass.rewrite_module(self)
     }
 }
 
+struct Scope {
+    bindings: HashMap<String, u32>,
+    first: u32,
+}
+
 struct Pass {
-    env: Vec<HashMap<String, ()>>,
+    env: Vec<Scope>,
+    reg: u32,
 }
 
 impl Pass {
-    fn lookup(&self, name: &str) -> bool {
-        for scope in self.env.iter().rev() {
-            if scope.contains_key(name) { return true; }
-        }
-
-        false
+    fn bump(&mut self) -> u32 {
+        let reg = self.reg;
+        self.reg += 1;
+        reg
     }
 
-    fn bind(&mut self, name: &str, value: ()) -> Result<(), NameErr> {
-        if let Some(scope) = self.env.iter_mut().last() {
-            scope.insert(name.to_owned(), value);
+    fn lookup(&self, name: &str) -> Option<u32> {
+        for scope in self.env.iter().rev() {
+            if let Some(value) = scope.bindings.get(name) {
+                return Some(value.clone());
+            }
+        }
 
-            Ok(())
+        None
+    }
+
+    fn bind(&mut self, name: &str) -> Result<u32, NameErr> {
+        let value = self.bump();
+
+        if let Some(scope) = self.env.iter_mut().last() {
+            scope.bindings.insert(name.to_owned(), value);
+
+            Ok(value)
         } else {
             Err(NameErr::ScopeUnderflow)
         }
     }
 
     fn enter(&mut self) {
-        self.env.push(HashMap::new());
+        self.env.push(Scope {
+            first: self.reg,
+            bindings: HashMap::new(),
+        });
     }
 
     fn leave<T>(&mut self, t: T) -> Result<T, NameErr> {
-        if let Some(_scope) = self.env.pop() {
+        if let Some(Scope { first, .. }) = self.env.pop() {
+            self.reg = first;
             Ok(t)
         } else {
             Err(NameErr::ScopeUnderflow)
@@ -71,12 +93,15 @@ impl Rewriter<NameErr> for Pass {
     fn rewrite_knot(&mut self, t: Knot) -> Result<Knot, NameErr> {
         self.enter();
 
-        for &Var(ref name) in t.args.iter() {
-            self.bind(name, ())?;
-        }
+        let args = each(t.args, |arg| {
+            match arg {
+                Var::Name(name) => Ok(Var::Register(self.bind(&name)?)),
+                Var::Register(_) => Err(NameErr::InvalidAst),
+            }
+        })?;
 
         let t = Knot {
-            args: t.args,
+            args: args,
             name: self.rewrite_label(t.name)?,
             body: each(t.body, |t| self.rewrite_stmt(t))?,
         };
@@ -92,21 +117,19 @@ impl Rewriter<NameErr> for Pass {
         self.leave(t)
     }
 
-    fn rewrite_bind(&mut self, t: Bind) -> Result<Bind, NameErr> {
+    fn rewrite_pat(&mut self, t: Pat) -> Result<Pat, NameErr> {
         let t = match t {
-            Bind::Var(v) => {
-                // NOTE: Does not recurse!
-                if self.lookup(&v.0) {
-                    Bind::Match(v)
-                } else {
-                    self.bind(&v.0, ())?;
-                    Bind::Var(v)
-                }
+            Pat::Var(v) => match self.rewrite_var(v) {
+                Err(NameErr::NotFound(name)) => {
+                    Pat::Var(Var::Register(self.bind(&name)?))
+                },
+
+                var => Pat::Match(var?),
             },
 
-            Bind::List(l) => {
+            Pat::List(l) => {
                 // Explicitly handle this so we can recurse into it
-                Bind::List(each(l, |t| self.rewrite_bind(t))?)
+                Pat::List(each(l, |t| self.rewrite_pat(t))?)
             },
 
             other => other,
@@ -116,12 +139,16 @@ impl Rewriter<NameErr> for Pass {
     }
 
     fn rewrite_var(&mut self, t: Var) -> Result<Var, NameErr> {
-        let Var(name) = t;
+        match t {
+            Var::Name(name) => {
+                if let Some(reg) = self.lookup(&name) {
+                    Ok(Var::Register(reg))
+                } else {
+                    Err(NameErr::NotFound(name))
+                }
+            },
 
-        if self.lookup(&name) {
-            Ok(Var(name))
-        } else {
-            Err(NameErr::NotFound(name))
+            Var::Register(_) => Err(NameErr::InvalidAst),
         }
     }
 }

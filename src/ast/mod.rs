@@ -22,9 +22,9 @@ pub struct Choice {
 
 #[derive(Clone, Debug, PartialEq)]
 pub struct Trap {
-    pub pattern: Bind,
+    pub pattern: Pat,
     pub guard: Expr,
-    pub origin: Bind,
+    pub origin: Pat,
     pub body: Vec<Stmt>,
 }
 
@@ -32,10 +32,10 @@ pub struct Trap {
 pub enum Stmt {
     Empty,
     Disarm(Label),
-    Let(Bind, Expr),
+    Let(Pat, Expr),
     Listen(Vec<Trap>),
     SendMsg(Expr, Expr),
-    LetSpawn(Bind, Label, Vec<Expr>),
+    LetSpawn(Pat, Label, Vec<Expr>),
     TailCall(Label, Vec<Expr>),
     Trace(Expr),
     Trap(Label, Vec<Trap>),
@@ -54,13 +54,16 @@ pub enum Label {
 pub struct Modpath(pub Vec<String>);
 
 #[derive(Clone, Debug, PartialEq)]
-pub struct Var(pub String);
+pub enum Var {
+    Name(String),
+    Register(u32),
+}
 
 #[derive(Clone, Debug, PartialEq)]
-pub enum Bind {
+pub enum Pat {
     Hole,
     Var(Var),
-    List(Vec<Bind>),
+    List(Vec<Pat>),
     Literal(Lit),
     Match(Var),
 }

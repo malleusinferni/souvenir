@@ -54,7 +54,7 @@ Statement: ast::Stmt = {
     "->" <f:FunCall> ";" => ast::Stmt::TailCall(f.0, f.1),
 
     "spawn" <f:FunCall> ";" => {
-        ast::Stmt::LetSpawn(ast::Bind::Hole, f.0, f.1)
+        ast::Stmt::LetSpawn(ast::Pat::Hole, f.0, f.1)
     },
 
     "let" <p:Pat> "=" "spawn" <f:FunCall> ";" => {
@@ -95,9 +95,9 @@ Trap: ast::Trap = {
 };
 
 #[inline]
-TrapSrc: ast::Bind = {
+TrapSrc: ast::Pat = {
     <o:("from" <VarName>)?> => {
-        if let Some(v) = o { ast::Bind::Var(v) } else { ast::Bind::Hole }
+        if let Some(v) = o { ast::Pat::Var(v) } else { ast::Pat::Hole }
     }
 };
 
@@ -144,19 +144,19 @@ FuncName: ast::Label = {
 };
 
 VarName: ast::Var = {
-    <s:"NmVar"> => ast::Var(s.to_string())
+    <s:"NmVar"> => ast::Var::Name(s.to_string())
 };
 
-Pat: ast::Bind = {
-    "_" => ast::Bind::Hole,
+Pat: ast::Pat = {
+    "_" => ast::Pat::Hole,
 
-    <VarName> => ast::Bind::Var(<>),
+    <VarName> => ast::Pat::Var(<>),
 
-    "[" "]" => ast::Bind::List(vec![]),
+    "[" "]" => ast::Pat::List(vec![]),
 
-    "[" <Comma<Pat>> "]" => ast::Bind::List(<>),
+    "[" <Comma<Pat>> "]" => ast::Pat::List(<>),
 
-    <Literal> => ast::Bind::Literal(<>),
+    <Literal> => ast::Pat::Literal(<>),
 };
 
 Expr: ast::Expr = {

@@ -26,8 +26,8 @@ pub trait Rewriter<Error> {
 
     fn rewrite_trap(&mut self, t: Trap) -> Result<Trap, Error> {
         Ok(Trap {
-            pattern: self.rewrite_bind(t.pattern)?,
-            origin: self.rewrite_bind(t.origin)?,
+            pattern: self.rewrite_pat(t.pattern)?,
+            origin: self.rewrite_pat(t.origin)?,
             guard: self.rewrite_expr(t.guard)?,
             body: self.rewrite_block(t.body)?,
         })
@@ -50,7 +50,7 @@ pub trait Rewriter<Error> {
             Stmt::Let(name, value) => {
                 // Evaluation order
                 let value = self.rewrite_expr(value)?;
-                let name = self.rewrite_bind(name)?;
+                let name = self.rewrite_pat(name)?;
                 Stmt::Let(name, value)
             },
 
@@ -68,7 +68,7 @@ pub trait Rewriter<Error> {
                 // Evaluation order
                 let args = each(args, |t| self.rewrite_expr(t))?;
                 let label = self.rewrite_label(label)?;
-                let name = self.rewrite_bind(name)?;
+                let name = self.rewrite_pat(name)?;
                 Stmt::LetSpawn(name, label, args)
             },
 
@@ -110,24 +110,24 @@ pub trait Rewriter<Error> {
         Ok(t)
     }
 
-    fn rewrite_bind(&mut self, t: Bind) -> Result<Bind, Error> {
+    fn rewrite_pat(&mut self, t: Pat) -> Result<Pat, Error> {
         let t = match t {
-            Bind::Hole => Bind::Hole,
+            Pat::Hole => Pat::Hole,
 
-            Bind::Var(v) => {
-                Bind::Var(self.rewrite_var(v)?)
+            Pat::Var(v) => {
+                Pat::Var(self.rewrite_var(v)?)
             },
 
-            Bind::List(l) => {
-                Bind::List(each(l, |t| self.rewrite_bind(t))?)
+            Pat::List(l) => {
+                Pat::List(each(l, |t| self.rewrite_pat(t))?)
             },
 
-            Bind::Literal(l) => {
-                Bind::Literal(self.rewrite_lit(l)?)
+            Pat::Literal(l) => {
+                Pat::Literal(self.rewrite_lit(l)?)
             },
 
-            Bind::Match(v) => {
-                Bind::Match(self.rewrite_var(v)?)
+            Pat::Match(v) => {
+                Pat::Match(self.rewrite_var(v)?)
             },
         };
 
