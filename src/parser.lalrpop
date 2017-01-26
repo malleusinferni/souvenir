@@ -39,22 +39,26 @@ Statement: ast::Stmt = {
 
     <LitStr> ";" => ast::Stmt::Trace(<>),
 
-    "let" <VarName> "=" <Expr> ";" => ast::Stmt::Let(<>),
+    "let" <p:Pat> "=" <v:Expr> ";" => {
+        ast::Stmt::Let(p, v)
+    },
 
     "wait" <Expr> ";" => ast::Stmt::Wait(<>),
 
-    <VarName> <Expr> ";" => ast::Stmt::SendMsg(<>),
+    <d:VarName> <m:Expr> ";" => {
+        ast::Stmt::SendMsg(ast::Expr::Var(d), m)
+    },
 
     <Expr> "<-" <Expr> ";" => ast::Stmt::SendMsg(<>),
 
     "->" <f:FunCall> ";" => ast::Stmt::TailCall(f.0, f.1),
 
     "spawn" <f:FunCall> ";" => {
-        ast::Stmt::LetSpawn(ast::Expr::Hole, f.0, f.1)
+        ast::Stmt::LetSpawn(ast::Bind::Hole, f.0, f.1)
     },
 
-    "let" <v:VarName> "=" "spawn" <f:FunCall> ";" => {
-        ast::Stmt::LetSpawn(v, f.0, f.1)
+    "let" <p:Pat> "=" "spawn" <f:FunCall> ";" => {
+        ast::Stmt::LetSpawn(p, f.0, f.1)
     },
 
     ";" => ast::Stmt::Empty,
@@ -68,7 +72,7 @@ Choice: ast::Choice = {
     },
 
     "|" "_" ";" <body:Statement*> => ast::Choice {
-        guard: ast::Expr::Hole,
+        guard: ast::Expr::LastResort,
         title: ast::Expr::Str(String::new()),
         body: body,
     }
@@ -82,7 +86,7 @@ ChoiceGuard: ast::Expr = {
 };
 
 Trap: ast::Trap = {
-    "|" <p:Expr> <o:TrapSrc> <g:TrapGuard> ";" <body:Statement*> => ast::Trap {
+    "|" <p:Pat> <o:TrapSrc> <g:TrapGuard> ";" <body:Statement*> => ast::Trap {
         pattern: p,
         guard: g,
         origin: o,
@@ -91,8 +95,10 @@ Trap: ast::Trap = {
 };
 
 #[inline]
-TrapSrc: ast::Expr = {
-    <o:("from" <VarName>)?> => o.unwrap_or_else(|| ast::Expr::Hole)
+TrapSrc: ast::Bind = {
+    <o:("from" <VarName>)?> => {
+        if let Some(v) = o { ast::Bind::Var(v) } else { ast::Bind::Hole }
+    }
 };
 
 #[inline]
@@ -108,7 +114,7 @@ Comma<T>: Vec<T> = {
     },
 };
 
-ArgList: Vec<ast::Expr> = {
+ArgList: Vec<ast::Var> = {
     "(" <Comma<VarName>> ")" => <>,
     "(" ")" => vec![],
 };
@@ -137,12 +143,16 @@ FuncName: ast::Label = {
     },
 };
 
-VarName: ast::Expr = {
-    <s:"NmVar"> => ast::Expr::Var(s.to_string())
+VarName: ast::Var = {
+    <s:"NmVar"> => ast::Var(s.to_string())
+};
+
+Pat: ast::Bind = {
+    <VarName> => ast::Bind::Var(<>)
 };
 
 Expr: ast::Expr = {
-    <VarName> => <>,
+    <VarName> => ast::Expr::Var(<>),
     <LitAtom> => <>,
     <LitInt> => <>,
 };

@@ -9,7 +9,7 @@ pub struct Module {
 #[derive(Clone, Debug, PartialEq)]
 pub struct Knot {
     pub name: Label,
-    pub args: Vec<Expr>,
+    pub args: Vec<Var>,
     pub body: Vec<Stmt>,
 }
 
@@ -22,9 +22,9 @@ pub struct Choice {
 
 #[derive(Clone, Debug, PartialEq)]
 pub struct Trap {
-    pub pattern: Expr,
+    pub pattern: Bind,
     pub guard: Expr,
-    pub origin: Expr,
+    pub origin: Bind,
     pub body: Vec<Stmt>,
 }
 
@@ -32,10 +32,10 @@ pub struct Trap {
 pub enum Stmt {
     Empty,
     Disarm(Label),
-    Let(Expr, Expr),
+    Let(Bind, Expr),
     Listen(Vec<Trap>),
     SendMsg(Expr, Expr),
-    LetSpawn(Expr, Label, Vec<Expr>),
+    LetSpawn(Bind, Label, Vec<Expr>),
     TailCall(Label, Vec<Expr>),
     Trace(Expr),
     Trap(Label, Vec<Trap>),
@@ -57,17 +57,27 @@ pub struct Modpath(pub Vec<String>);
 pub struct ActorID(pub u32);
 
 #[derive(Clone, Debug, PartialEq)]
-pub enum Expr {
+pub struct Var(pub String);
+
+#[derive(Clone, Debug, PartialEq)]
+pub enum Bind {
     Hole,
+    Var(Var),
+    Match(Expr),
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub enum Expr {
     Actor(ActorID),
     Count(Label),
     Atom(String),
-    Var(String),
+    Var(Var),
     Str(String),
     Int(i32),
     Not(Box<Expr>),
     List(Vec<Expr>),
     Binop(Box<Expr>, Binop, Box<Expr>),
+    LastResort,
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -139,7 +149,7 @@ fn ast_structure() {
         },
 
         Choice {
-            guard: Expr::Hole,
+            guard: Expr::LastResort,
             title: "".into(),
             body: vec![
                 Stmt::TailCall(Some("dest_default").into(), vec![]),

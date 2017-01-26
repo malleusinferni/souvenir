@@ -11,7 +11,7 @@ pub trait Rewriter<Error> {
     fn rewrite_knot(&mut self, t: Knot) -> Result<Knot, Error> {
         Ok(Knot {
             name: self.rewrite_label(t.name)?,
-            args: each(t.args, |t| self.rewrite_expr(t))?,
+            args: each(t.args, |t| self.rewrite_var(t))?,
             body: self.rewrite_block(t.body)?,
         })
     }
@@ -26,9 +26,9 @@ pub trait Rewriter<Error> {
 
     fn rewrite_trap(&mut self, t: Trap) -> Result<Trap, Error> {
         Ok(Trap {
-            pattern: self.rewrite_expr(t.pattern)?,
+            pattern: self.rewrite_bind(t.pattern)?,
             guard: self.rewrite_expr(t.guard)?,
-            origin: self.rewrite_expr(t.origin)?,
+            origin: self.rewrite_bind(t.origin)?,
             body: self.rewrite_block(t.body)?,
         })
     }
@@ -48,7 +48,7 @@ pub trait Rewriter<Error> {
             },
 
             Stmt::Let(name, value) => {
-                let name = self.rewrite_expr(name)?;
+                let name = self.rewrite_bind(name)?;
                 let value = self.rewrite_expr(value)?;
                 Stmt::Let(name, value)
             },
@@ -62,7 +62,7 @@ pub trait Rewriter<Error> {
             },
 
             Stmt::LetSpawn(name, label, args) => {
-                let name = self.rewrite_expr(name)?;
+                let name = self.rewrite_bind(name)?;
                 let label = self.rewrite_label(label)?;
                 let args = each(args, |t| self.rewrite_expr(t))?;
                 Stmt::LetSpawn(name, label, args)
@@ -102,7 +102,60 @@ pub trait Rewriter<Error> {
         Ok(t)
     }
 
+    fn rewrite_var(&mut self, t: Var) -> Result<Var, Error> {
+        Ok(t)
+    }
+
+    fn rewrite_bind(&mut self, t: Bind) -> Result<Bind, Error> {
+        let t = match t {
+            Bind::Hole => Bind::Hole,
+
+            Bind::Var(v) => {
+                Bind::Var(self.rewrite_var(v)?)
+            },
+
+            Bind::Match(expr) => {
+                Bind::Match(self.rewrite_expr(expr)?)
+            },
+        };
+
+        Ok(t)
+    }
+
     fn rewrite_expr(&mut self, t: Expr) -> Result<Expr, Error> {
+        let t = match t {
+            // TODO: Literal rewriting
+            Expr::Actor(i) => Expr::Actor(i),
+            Expr::Atom(s) => Expr::Atom(s),
+            Expr::Str(s) => Expr::Str(s),
+            Expr::Int(i) => Expr::Int(i),
+
+            Expr::Count(label) => {
+                Expr::Count(self.rewrite_label(label)?)
+            },
+
+            Expr::Var(v) => {
+                Expr::Var(self.rewrite_var(v)?)
+            },
+
+            Expr::Not(b) => {
+                Expr::Not(Box::new(self.rewrite_expr(*b)?))
+            },
+
+            Expr::List(v) => {
+                Expr::List(each(v, |t| self.rewrite_expr(t))?)
+            },
+
+            Expr::Binop(lhs, op, rhs) => {
+                let lhs = Box::new(self.rewrite_expr(*lhs)?);
+                // let op = op;
+                let rhs = Box::new(self.rewrite_expr(*rhs)?);
+                Expr::Binop(lhs, op, rhs)
+            },
+
+            Expr::LastResort => Expr::LastResort,
+        };
+
         Ok(t)
     }
 }
