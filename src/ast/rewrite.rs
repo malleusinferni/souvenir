@@ -114,8 +114,16 @@ pub trait Rewriter<Error> {
                 Bind::Var(self.rewrite_var(v)?)
             },
 
-            Bind::Match(expr) => {
-                Bind::Match(self.rewrite_expr(expr)?)
+            Bind::List(l) => {
+                Bind::List(each(l, |t| self.rewrite_bind(t))?)
+            },
+
+            Bind::Literal(l) => {
+                Bind::Literal(self.rewrite_lit(l)?)
+            },
+
+            Bind::Match(v) => {
+                Bind::Match(self.rewrite_var(v)?)
             },
         };
 
@@ -124,11 +132,11 @@ pub trait Rewriter<Error> {
 
     fn rewrite_expr(&mut self, t: Expr) -> Result<Expr, Error> {
         let t = match t {
-            // TODO: Literal rewriting
-            Expr::Actor(i) => Expr::Actor(i),
-            Expr::Atom(s) => Expr::Atom(s),
             Expr::Str(s) => Expr::Str(s),
-            Expr::Int(i) => Expr::Int(i),
+
+            Expr::Literal(l) => {
+                Expr::Literal(self.rewrite_lit(l)?)
+            },
 
             Expr::Count(label) => {
                 Expr::Count(self.rewrite_label(label)?)
@@ -156,6 +164,10 @@ pub trait Rewriter<Error> {
             Expr::LastResort => Expr::LastResort,
         };
 
+        Ok(t)
+    }
+
+    fn rewrite_lit(&mut self, t: Lit) -> Result<Lit, Error> {
         Ok(t)
     }
 }

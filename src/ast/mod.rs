@@ -53,9 +53,6 @@ pub enum Label {
 #[derive(Clone, Debug, Eq, Hash, PartialEq)]
 pub struct Modpath(pub Vec<String>);
 
-#[derive(Copy, Clone, Debug, Eq, PartialEq)]
-pub struct ActorID(pub u32);
-
 #[derive(Clone, Debug, PartialEq)]
 pub struct Var(pub String);
 
@@ -63,21 +60,27 @@ pub struct Var(pub String);
 pub enum Bind {
     Hole,
     Var(Var),
-    Match(Expr),
+    List(Vec<Bind>),
+    Literal(Lit),
+    Match(Var),
 }
 
 #[derive(Clone, Debug, PartialEq)]
 pub enum Expr {
-    Actor(ActorID),
+    Literal(Lit),
     Count(Label),
-    Atom(String),
-    Var(Var),
     Str(String),
-    Int(i32),
+    Var(Var),
     Not(Box<Expr>),
     List(Vec<Expr>),
     Binop(Box<Expr>, Binop, Box<Expr>),
     LastResort,
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub enum Lit {
+    Atom(String),
+    Int(i32),
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -101,7 +104,9 @@ impl<'a> From<Option<&'a str>> for Label {
 
 impl From<bool> for Expr {
     fn from(b: bool) -> Self {
-        if b { Expr::Int(1) } else { Expr::Int(0) }
+        Expr::Literal({
+            if b { Lit::Int(1) } else { Lit::Int(0) }
+        })
     }
 }
 
@@ -133,7 +138,7 @@ fn ast_structure() {
 
     let weave_arms = vec![
         Choice {
-            guard: Expr::Int(1),
+            guard: Expr::Literal(Lit::Int(1)),
             title: "Option 1".into(),
             body: vec![
                 Stmt::TailCall(Some("dest1").into(), vec![]),
@@ -141,7 +146,7 @@ fn ast_structure() {
         },
 
         Choice {
-            guard: Expr::Int(1),
+            guard: Expr::Literal(Lit::Int(1)),
             title: "Option 2 -- Comment included in string".into(),
             body: vec![
                 Stmt::TailCall(Some("dest2").into(), vec![]),

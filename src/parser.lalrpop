@@ -148,25 +148,31 @@ VarName: ast::Var = {
 };
 
 Pat: ast::Bind = {
-    <VarName> => ast::Bind::Var(<>)
+    "_" => ast::Bind::Hole,
+
+    <VarName> => ast::Bind::Var(<>),
+
+    "[" "]" => ast::Bind::List(vec![]),
+
+    "[" <Comma<Pat>> "]" => ast::Bind::List(<>),
+
+    <Literal> => ast::Bind::Literal(<>),
 };
 
 Expr: ast::Expr = {
     <VarName> => ast::Expr::Var(<>),
-    <LitAtom> => <>,
-    <LitInt> => <>,
+    <Literal> => ast::Expr::Literal(<>),
+    // FIXME: Operators
 };
 
-LitAtom: ast::Expr = {
-    <a:"LitAtom"> => ast::Expr::Atom({
+Literal: ast::Lit = {
+    <a:"LitAtom"> => ast::Lit::Atom({
         a.chars().skip(1).collect::<String>()
-    })
-};
+    }),
 
-LitInt: ast::Expr = {
-    <n:"LitInt"> => ast::Expr::Int({
+    <n:"LitInt"> => ast::Lit::Int({
         n.parse::<i32>().expect("Can't parse int")
-    })
+    }),
 };
 
 LitStr: ast::Expr = {
