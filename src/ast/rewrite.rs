@@ -10,8 +10,8 @@ pub trait Rewriter<Error> {
 
     fn rewrite_knot(&mut self, t: Knot) -> Result<Knot, Error> {
         Ok(Knot {
-            name: self.rewrite_label(t.name)?,
             args: each(t.args, |t| self.rewrite_var(t))?,
+            name: self.rewrite_label(t.name)?,
             body: self.rewrite_block(t.body)?,
         })
     }
@@ -27,8 +27,8 @@ pub trait Rewriter<Error> {
     fn rewrite_trap(&mut self, t: Trap) -> Result<Trap, Error> {
         Ok(Trap {
             pattern: self.rewrite_bind(t.pattern)?,
-            guard: self.rewrite_expr(t.guard)?,
             origin: self.rewrite_bind(t.origin)?,
+            guard: self.rewrite_expr(t.guard)?,
             body: self.rewrite_block(t.body)?,
         })
     }
@@ -48,8 +48,9 @@ pub trait Rewriter<Error> {
             },
 
             Stmt::Let(name, value) => {
-                let name = self.rewrite_bind(name)?;
+                // Evaluation order
                 let value = self.rewrite_expr(value)?;
+                let name = self.rewrite_bind(name)?;
                 Stmt::Let(name, value)
             },
 
@@ -58,19 +59,22 @@ pub trait Rewriter<Error> {
             },
 
             Stmt::SendMsg(dst, args) => {
-                Stmt::SendMsg(self.rewrite_expr(dst)?, self.rewrite_expr(args)?)
+                let args = self.rewrite_expr(args)?;
+                let dst = self.rewrite_expr(dst)?;
+                Stmt::SendMsg(dst, args)
             },
 
             Stmt::LetSpawn(name, label, args) => {
-                let name = self.rewrite_bind(name)?;
-                let label = self.rewrite_label(label)?;
+                // Evaluation order
                 let args = each(args, |t| self.rewrite_expr(t))?;
+                let label = self.rewrite_label(label)?;
+                let name = self.rewrite_bind(name)?;
                 Stmt::LetSpawn(name, label, args)
             },
 
             Stmt::TailCall(label, args) => {
-                let label = self.rewrite_label(label)?;
                 let args = each(args, |t| self.rewrite_expr(t))?;
+                let label = self.rewrite_label(label)?;
                 Stmt::TailCall(label, args)
             },
 
@@ -173,7 +177,7 @@ pub trait Rewriter<Error> {
 }
 
 #[inline(always)]
-fn each<T, E, F>(mut vec: Vec<T>, mut callback: F) -> Result<Vec<T>, E>
+pub fn each<T, E, F>(mut vec: Vec<T>, mut callback: F) -> Result<Vec<T>, E>
     where F: FnMut(T) -> Result<T, E>
 {
     let mut ret = Vec::with_capacity(vec.len());
