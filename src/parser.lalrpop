@@ -4,9 +4,9 @@ use tokenizer::{Tok, TokErr};
 grammar<'input>(text: &'input str);
 
 pub Module: ast::Module = {
-    ";"* <Knot*> => ast::Module {
-        globals: vec![], // FIXME
-        knots: <>,
+    <s:Statement*> <k:Knot*> => ast::Module {
+        globals: s,
+        knots: k,
     },
 };
 
@@ -23,15 +23,15 @@ Statement: ast::Stmt = {
         ast::Stmt::Disarm(<>)
     },
 
-    "weave" <l:Label?> ";" <body:Choice*> ";;" => {
+    "weave" <l:Label?> ";" <body:Choice*> ";;" ";" => {
         ast::Stmt::Weave(l.unwrap_or(ast::Label::Anonymous), body)
     },
 
-    "trap" <l:Label?> ";" <body:Trap*> ";;" => {
+    "trap" <l:Label?> ";" <body:Trap*> ";;" ";" => {
         ast::Stmt::Trap(l.unwrap_or(ast::Label::Anonymous), body)
     },
 
-    "listen" ";" <body:Trap*> ";;" => {
+    "listen" ";" <body:Trap*> ";;" ";" => {
         ast::Stmt::Listen(body)
     },
 

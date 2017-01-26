@@ -1,0 +1,9 @@
+== knot_name
+weave 'foo
+| > Option 1
+    -> dest1 -- Comment allowed here and ignored
+| > Option 2 -- Comment included in string
+    -> dest2
+| _
+    -> dest_default
+;;

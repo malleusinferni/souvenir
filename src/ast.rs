@@ -104,8 +104,7 @@ fn ast_structure() {
     use parser;
     use tokenizer::Tokenizer;
 
-    let src = r#"
-    == knot_name
+    let src = r#"== knot_name
     weave 'foo
     | > Option 1
         -> dest1 -- Comment allowed here and ignored
@@ -151,7 +150,6 @@ fn ast_structure() {
             args: vec![],
             body: vec![
                 Stmt::Weave(Some("foo").into(), weave_arms),
-                Stmt::Empty,
             ],
         }],
     };
