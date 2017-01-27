@@ -170,28 +170,31 @@ Expr: ast::Expr = {
     <e:Expr2> => e,
 };
 
-Binop<O, A>: ast::Expr = {
-    <lhs:A> <op:O> <rhs:A> => {
+Binop<O, L, R>: ast::Expr = {
+    <lhs:L> <op:O> <rhs:R> => {
         let lhs = Box::new(lhs);
         let rhs = Box::new(rhs);
         ast::Expr::Binop(lhs, op, rhs)
     },
 };
 
-OpAdd: ast::Binop = { "+" => ast::Binop::Add };
-OpSub: ast::Binop = { "-" => ast::Binop::Sub };
-OpDiv: ast::Binop = { "/" => ast::Binop::Div };
-OpMul: ast::Binop = { "*" => ast::Binop::Mul };
+Op2: ast::Binop = {
+    "+" => ast::Binop::Add,
+    "-" => ast::Binop::Sub,
+};
 
 Expr2: ast::Expr = {
-    <add:Binop<OpAdd, Expr1>> => add,
-    <sub:Binop<OpSub, Expr1>> => sub,
+    <b:Binop<Op2, Expr2, Expr1>> => b,
     <e:Expr1> => e,
 };
 
+Op1: ast::Binop = {
+    "/" => ast::Binop::Div,
+    "*" => ast::Binop::Mul,
+};
+
 Expr1: ast::Expr = {
-    <div:Binop<OpDiv, Expr0>> => div,
-    <mul:Binop<OpMul, Expr0>> => mul,
+    <b:Binop<Op1, Expr1, Expr0>> => b,
     <e:Expr0> => e,
 };
 
