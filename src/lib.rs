@@ -31,8 +31,8 @@ fn parse_examples() {
     Module::parse(src2).expect("Example 2 failed");
 
     let src3 = r#"
-    let A = 4
-    let B = spawn util:timeout(5)
+    let Four = 2 + 2
+    let B = spawn util:timeout(5 * 5)
     == start
     B <- #time_to_die
     "#;

@@ -166,9 +166,39 @@ Pat: ast::Pat = {
 };
 
 Expr: ast::Expr = {
+    // FIXME: More operators
+    <e:Expr2> => e,
+};
+
+Binop<O, A>: ast::Expr = {
+    <lhs:A> <op:O> <rhs:A> => {
+        let lhs = Box::new(lhs);
+        let rhs = Box::new(rhs);
+        ast::Expr::Binop(lhs, op, rhs)
+    },
+};
+
+OpAdd: ast::Binop = { "+" => ast::Binop::Add };
+OpSub: ast::Binop = { "-" => ast::Binop::Sub };
+OpDiv: ast::Binop = { "/" => ast::Binop::Div };
+OpMul: ast::Binop = { "*" => ast::Binop::Mul };
+
+Expr2: ast::Expr = {
+    <add:Binop<OpAdd, Expr1>> => add,
+    <sub:Binop<OpSub, Expr1>> => sub,
+    <e:Expr1> => e,
+};
+
+Expr1: ast::Expr = {
+    <div:Binop<OpDiv, Expr0>> => div,
+    <mul:Binop<OpMul, Expr0>> => mul,
+    <e:Expr0> => e,
+};
+
+Expr0: ast::Expr = {
     <VarName> => ast::Expr::Var(<>),
     <Literal> => ast::Expr::Literal(<>),
-    // FIXME: Operators
+    "(" <e:Expr> ")" => e,
 };
 
 Literal: ast::Lit = {
