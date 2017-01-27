@@ -8,8 +8,8 @@ elseif exists('b:current_syntax')
   finish
 endif
 
-syn match souvenirNumber /\d\+/
-syn match souvenirRandom /\d\+d\d\+/
+syn match souvenirNumber /\<\d\+\>/
+syn match souvenirRandom /\<\d\+d\d\+\>/
 syn match souvenirArithmetic /-\|+\|\*\|<=\?/
 
 syn region souvenirString start=/> / end=/$/ contains=souvenirTemplate
@@ -25,16 +25,16 @@ syn keyword souvenirKeyword from
 syn match souvenirEquals /=/
 
 syn match souvenirKnotDef /^==/ nextgroup=souvenirKnotName skipwhite
-syn match souvenirKnotName /\<\w\+/ nextgroup=souvenirKnotArgs "contained
+syn match souvenirKnotName /\<\l\w*/ nextgroup=souvenirKnotArgs "contained
 syn region souvenirKnotArgs matchgroup=souvenirParen start=/(/ matchgroup=souvenirParen end=/)/ contained contains=souvenirAtom,souvenirNumber,souvenirVariableName
 
 syn match souvenirModName /\<\w\+:/he=e-1,me=e-1 nextgroup=souvenirModSep
 syn match souvenirModSep /\>:\</ nextgroup=souvenirKnotName
 syn match souvenirDivert /->/ nextgroup=souvenirKnotName,souvenirModName skipwhite
-syn match souvenirLabel /'\w\+/
-syn match souvenirMacro /?\w\+/
-syn match souvenirAtom /#\w\+/
-syn match souvenirVariableName /\u\i*/
+syn match souvenirLabel /'\l\w*/
+syn match souvenirMacro /?\u[A-Z0-9_]*/
+syn match souvenirAtom /#\l[a-z0-9_]*/
+syn match souvenirVariableName /\u[A-Za-z]*/
 syn match souvenirChoice /|/
 syn match souvenirSend /<-/
 syn match souvenirEnd /;;/
