@@ -5,6 +5,7 @@ pub mod ast;
 pub mod parser;
 pub mod tokenizer;
 
+pub mod driver;
 pub mod pass;
 
 #[test]

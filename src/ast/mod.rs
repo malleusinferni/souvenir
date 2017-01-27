@@ -66,6 +66,7 @@ pub enum Assign {
 pub enum Var {
     Name(String),
     Register(u32),
+    PidOfSelf,
 }
 
 #[derive(Clone, Debug, PartialEq)]

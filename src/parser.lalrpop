@@ -146,7 +146,10 @@ FuncName: ast::Label = {
 };
 
 VarName: ast::Var = {
-    <s:"NmVar"> => ast::Var::Name(s.to_string())
+    <s:"NmVar"> => match s {
+        "Self" => ast::Var::PidOfSelf,
+        s => ast::Var::Name(s.to_string()),
+    },
 };
 
 Assign: ast::Assign = {

@@ -6,6 +6,7 @@ use ast::rewrite::*;
 #[derive(Clone, Debug)]
 pub enum NameErr {
     NotFound(String),
+    CannotAssignSelf,
     ScopeUnderflow,
     InvalidAst,
 }
@@ -98,6 +99,7 @@ impl Rewriter<NameErr> for Pass {
             match arg {
                 Var::Name(name) => Ok(Var::Register(self.bind(&name)?)),
                 Var::Register(_) => Err(NameErr::InvalidAst),
+                Var::PidOfSelf => Err(NameErr::CannotAssignSelf),
             }
         })?;
 
@@ -135,14 +137,17 @@ impl Rewriter<NameErr> for Pass {
         let t = match t {
             Assign::Hole => Assign::Hole,
 
-            Assign::Var(Var::Name(name)) => {
-                // Unconditionally bind this in the local scope.
-                // NOTE: Shadows previous assignments!
-                let var = Var::Register(self.bind(&name)?);
-                Assign::Var(var)
-            },
+            Assign::Var(var) => Assign::Var(match var {
+                Var::Name(name) => {
+                    // Unconditionally bind this in the local scope.
+                    // NOTE: Shadows previous assignments!
+                    Var::Register(self.bind(&name)?)
+                },
 
-            Assign::Var(Var::Register(_)) => return Err(NameErr::InvalidAst),
+                Var::PidOfSelf => return Err(NameErr::CannotAssignSelf),
+
+                Var::Register(_) => return Err(NameErr::InvalidAst),
+            }),
         };
 
         Ok(t)
@@ -155,6 +160,7 @@ impl Rewriter<NameErr> for Pass {
                     Pat::Assign(Assign::Var(Var::Register(self.bind(&name)?)))
                 },
 
+                // PidOfSelf handled implicitly
                 var => Pat::Match(var?),
             },
 
@@ -179,6 +185,8 @@ impl Rewriter<NameErr> for Pass {
                 }
             },
 
+            Var::PidOfSelf => Ok(Var::PidOfSelf),
+
             Var::Register(_) => Err(NameErr::InvalidAst),
         }
     }
@@ -197,48 +205,39 @@ impl Rewriter<NameErr> for Check {
 
 #[test]
 fn good() {
-    let src1 = r#"
+    let sources = vec![
+        r#"
         let A = 1
         == start
         trace A
-        "#;
+        "#,
 
-    Module::parse(src1)
-        .unwrap()
-        .qualify_labels(Modpath(vec![]))
-        .unwrap()
-        .resolve_names()
-        .unwrap();
-
-    let src2 = r#"
+        r#"
         == start
         let Child = spawn util:timeout(4)
         listen
         | #ok from Any when 1
             Any <- #test
         ;;
-        "#;
+        "#,
+    ];
 
-    Module::parse(src2)
-        .unwrap()
-        .qualify_labels(Modpath(vec![]))
-        .unwrap()
-        .resolve_names()
-        .unwrap();
+    for src in &sources {
+        Module::compile(src, Modpath(vec![])).unwrap();
+    }
 }
 
 #[test]
-#[should_panic]
 fn evil() {
-    let src = r#"
-        == start
-        trace OhNo
-        "#;
+    let sources = vec![
+        r#"== start; trace NotInScope"#,
+        r#"let Self = 4"#,
+    ];
 
-    Module::parse(src)
-        .unwrap()
-        .qualify_labels(Modpath(vec![]))
-        .unwrap()
-        .resolve_names()
-        .unwrap();
+    for src in &sources {
+        match Module::compile(src, Modpath(vec![])) {
+            Ok(tree) => panic!("Should not have compiled: {:#?}", tree),
+            Err(_) => (),
+        }
+    }
 }
