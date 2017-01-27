@@ -110,6 +110,19 @@ impl Rewriter<NameErr> for Pass {
         self.leave(t)
     }
 
+    fn rewrite_trap(&mut self, t: Trap) -> Result<Trap, NameErr> {
+        self.enter();
+
+        let t = Trap {
+            pattern: self.rewrite_pat(t.pattern)?,
+            origin: self.rewrite_pat(t.origin)?,
+            guard: self.rewrite_expr(t.guard)?,
+            body: each(t.body, |t| self.rewrite_stmt(t))?,
+        };
+
+        self.leave(t)
+    }
+
     fn rewrite_block(&mut self, t: Vec<Stmt>) -> Result<Vec<Stmt>, NameErr> {
         self.enter();
 
@@ -184,13 +197,29 @@ impl Rewriter<NameErr> for Check {
 
 #[test]
 fn good() {
-    let src = r#"
+    let src1 = r#"
         let A = 1
         == start
         trace A
         "#;
 
-    Module::parse(src)
+    Module::parse(src1)
+        .unwrap()
+        .qualify_labels(Modpath(vec![]))
+        .unwrap()
+        .resolve_names()
+        .unwrap();
+
+    let src2 = r#"
+        == start
+        let Child = spawn util:timeout(4)
+        listen
+        | #ok from Any when 1
+            Any <- #test
+        ;;
+        "#;
+
+    Module::parse(src2)
         .unwrap()
         .qualify_labels(Modpath(vec![]))
         .unwrap()
