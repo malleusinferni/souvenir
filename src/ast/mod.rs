@@ -32,11 +32,11 @@ pub struct Trap {
 pub enum Stmt {
     Empty,
     Disarm(Label),
-    Let(Pat, Expr),
+    Let(Assign, Expr),
     Listen(Vec<Trap>),
     SendMsg(Expr, Expr),
-    LetSpawn(Pat, Label, Vec<Expr>),
-    TailCall(Label, Vec<Expr>),
+    LetSpawn(Assign, FnCall),
+    Recur(FnCall),
     Trace(Expr),
     Trap(Label, Vec<Trap>),
     Wait(Expr),
@@ -54,6 +54,15 @@ pub enum Label {
 pub struct Modpath(pub Vec<String>);
 
 #[derive(Clone, Debug, PartialEq)]
+pub struct FnCall(pub Label, pub Vec<Expr>);
+
+#[derive(Clone, Debug, PartialEq)]
+pub enum Assign {
+    Hole,
+    Var(Var),
+}
+
+#[derive(Clone, Debug, PartialEq)]
 pub enum Var {
     Name(String),
     Register(u32),
@@ -61,8 +70,7 @@ pub enum Var {
 
 #[derive(Clone, Debug, PartialEq)]
 pub enum Pat {
-    Hole,
-    Var(Var),
+    Assign(Assign),
     List(Vec<Pat>),
     Literal(Lit),
     Match(Var),
@@ -154,7 +162,7 @@ fn ast_structure() {
             guard: Expr::Literal(Lit::Int(1)),
             title: "Option 1".into(),
             body: vec![
-                Stmt::TailCall(Some("dest1").into(), vec![]),
+                Stmt::Recur(FnCall(Some("dest1").into(), vec![])),
             ],
         },
 
@@ -162,7 +170,7 @@ fn ast_structure() {
             guard: Expr::Literal(Lit::Int(1)),
             title: "Option 2 -- Comment included in string".into(),
             body: vec![
-                Stmt::TailCall(Some("dest2").into(), vec![]),
+                Stmt::Recur(FnCall(Some("dest2").into(), vec![])),
             ],
         },
 
@@ -170,7 +178,7 @@ fn ast_structure() {
             guard: Expr::LastResort,
             title: "".into(),
             body: vec![
-                Stmt::TailCall(Some("dest_default").into(), vec![]),
+                Stmt::Recur(FnCall(Some("dest_default").into(), vec![])),
             ],
         },
     ];

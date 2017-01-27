@@ -118,11 +118,28 @@ impl Rewriter<NameErr> for Pass {
         self.leave(t)
     }
 
+    fn rewrite_assign(&mut self, t: Assign) -> Result<Assign, NameErr> {
+        let t = match t {
+            Assign::Hole => Assign::Hole,
+
+            Assign::Var(Var::Name(name)) => {
+                // Unconditionally bind this in the local scope.
+                // NOTE: Shadows previous assignments!
+                let var = Var::Register(self.bind(&name)?);
+                Assign::Var(var)
+            },
+
+            Assign::Var(Var::Register(_)) => return Err(NameErr::InvalidAst),
+        };
+
+        Ok(t)
+    }
+
     fn rewrite_pat(&mut self, t: Pat) -> Result<Pat, NameErr> {
         let t = match t {
-            Pat::Var(v) => match self.rewrite_var(v) {
+            Pat::Assign(Assign::Var(v)) => match self.rewrite_var(v) {
                 Err(NameErr::NotFound(name)) => {
-                    Pat::Var(Var::Register(self.bind(&name)?))
+                    Pat::Assign(Assign::Var(Var::Register(self.bind(&name)?)))
                 },
 
                 var => Pat::Match(var?),

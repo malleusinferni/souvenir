@@ -47,11 +47,11 @@ pub trait Rewriter<Error> {
                 Stmt::Disarm(self.rewrite_label(label)?)
             },
 
-            Stmt::Let(name, value) => {
+            Stmt::Let(assign, value) => {
                 // Evaluation order
                 let value = self.rewrite_expr(value)?;
-                let name = self.rewrite_pat(name)?;
-                Stmt::Let(name, value)
+                let assign = self.rewrite_assign(assign)?;
+                Stmt::Let(assign, value)
             },
 
             Stmt::Listen(t) => {
@@ -64,18 +64,15 @@ pub trait Rewriter<Error> {
                 Stmt::SendMsg(dst, args)
             },
 
-            Stmt::LetSpawn(name, label, args) => {
+            Stmt::LetSpawn(assign, fncall) => {
                 // Evaluation order
-                let args = each(args, |t| self.rewrite_expr(t))?;
-                let label = self.rewrite_label(label)?;
-                let name = self.rewrite_pat(name)?;
-                Stmt::LetSpawn(name, label, args)
+                let fncall = self.rewrite_fncall(fncall)?;
+                let assign = self.rewrite_assign(assign)?;
+                Stmt::LetSpawn(assign, fncall)
             },
 
-            Stmt::TailCall(label, args) => {
-                let args = each(args, |t| self.rewrite_expr(t))?;
-                let label = self.rewrite_label(label)?;
-                Stmt::TailCall(label, args)
+            Stmt::Recur(fncall) => {
+                Stmt::Recur(self.rewrite_fncall(fncall)?)
             },
 
             Stmt::Trace(expr) => {
@@ -106,16 +103,29 @@ pub trait Rewriter<Error> {
         Ok(t)
     }
 
+    fn rewrite_fncall(&mut self, t: FnCall) -> Result<FnCall, Error> {
+        let label = self.rewrite_label(t.0)?;
+        let args = each(t.1, |t| self.rewrite_expr(t))?;
+        Ok(FnCall(label, args))
+    }
+
+    fn rewrite_assign(&mut self, t: Assign) -> Result<Assign, Error> {
+        let t = match t {
+            Assign::Hole => Assign::Hole,
+            Assign::Var(v) => Assign::Var(self.rewrite_var(v)?),
+        };
+
+        Ok(t)
+    }
+
     fn rewrite_var(&mut self, t: Var) -> Result<Var, Error> {
         Ok(t)
     }
 
     fn rewrite_pat(&mut self, t: Pat) -> Result<Pat, Error> {
         let t = match t {
-            Pat::Hole => Pat::Hole,
-
-            Pat::Var(v) => {
-                Pat::Var(self.rewrite_var(v)?)
+            Pat::Assign(a) => {
+                Pat::Assign(self.rewrite_assign(a)?)
             },
 
             Pat::List(l) => {

@@ -39,8 +39,8 @@ Statement: ast::Stmt = {
 
     <LitStr> ";" => ast::Stmt::Trace(<>),
 
-    "let" <p:Pat> "=" <v:Expr> ";" => {
-        ast::Stmt::Let(p, v)
+    "let" <a:Assign> "=" <v:Expr> ";" => {
+        ast::Stmt::Let(a, v)
     },
 
     "wait" <Expr> ";" => ast::Stmt::Wait(<>),
@@ -51,14 +51,14 @@ Statement: ast::Stmt = {
 
     <Expr> "<-" <Expr> ";" => ast::Stmt::SendMsg(<>),
 
-    "->" <f:FunCall> ";" => ast::Stmt::TailCall(f.0, f.1),
+    "->" <FnCall> ";" => ast::Stmt::Recur(<>),
 
-    "spawn" <f:FunCall> ";" => {
-        ast::Stmt::LetSpawn(ast::Pat::Hole, f.0, f.1)
+    "spawn" <FnCall> ";" => {
+        ast::Stmt::LetSpawn(ast::Assign::Hole, <>)
     },
 
-    "let" <p:Pat> "=" "spawn" <f:FunCall> ";" => {
-        ast::Stmt::LetSpawn(p, f.0, f.1)
+    "let" <a:Assign> "=" "spawn" <f:FnCall> ";" => {
+        ast::Stmt::LetSpawn(a, f)
     },
 
     ";" => ast::Stmt::Empty,
@@ -96,8 +96,8 @@ Trap: ast::Trap = {
 
 #[inline]
 TrapSrc: ast::Pat = {
-    <o:("from" <VarName>)?> => {
-        if let Some(v) = o { ast::Pat::Var(v) } else { ast::Pat::Hole }
+    <o:("from" <Assign>)?> => {
+        ast::Pat::Assign(o.unwrap_or_else(|| ast::Assign::Hole))
     }
 };
 
@@ -119,10 +119,12 @@ ArgList: Vec<ast::Var> = {
     "(" ")" => vec![],
 };
 
-FunCall: (ast::Label, Vec<ast::Expr>) = {
-    <f:FuncName> "(" ")" => (f, vec![]),
-    <f:FuncName> "(" <c:Comma<Expr>> ")" => (f, c),
-    <f:FuncName> => (f, vec![]),
+FnCall: ast::FnCall = {
+    <f:FuncName> "(" <a:Comma<Expr>?> ")" => {
+        ast::FnCall(f, a.unwrap_or_else(|| vec![]))
+    },
+
+    <f:FuncName> => ast::FnCall(f, vec![]),
 };
 
 Label: ast::Label = {
@@ -147,10 +149,14 @@ VarName: ast::Var = {
     <s:"NmVar"> => ast::Var::Name(s.to_string())
 };
 
-Pat: ast::Pat = {
-    "_" => ast::Pat::Hole,
+Assign: ast::Assign = {
+    "_" => ast::Assign::Hole,
 
-    <VarName> => ast::Pat::Var(<>),
+    <VarName> => ast::Assign::Var(<>),
+};
+
+Pat: ast::Pat = {
+    <Assign> => ast::Pat::Assign(<>),
 
     "[" "]" => ast::Pat::List(vec![]),
 
