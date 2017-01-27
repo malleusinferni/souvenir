@@ -8,16 +8,14 @@ pub mod tokenizer;
 pub mod pass;
 
 #[test]
-fn it_works() {
-    use parser;
-    use tokenizer::Tokenizer;
+fn parse_examples() {
+    use ast::Module;
 
     let src1 = r#"== start
     -- This is a comment and should be ignored
     "#;
 
-    let tokens1 = Tokenizer::new(src1, 0);
-    parser::parse_Module(src1, tokens1).expect("Oh no");
+    Module::parse(src1).expect("Example 1 failed");
 
     let src2 = r#"== start
     weave 'foo
@@ -30,6 +28,14 @@ fn it_works() {
     ;;
     "#;
 
-    let tokens2 = Tokenizer::new(src2, 0);
-    parser::parse_Module(src2, tokens2).expect("Oh no");
+    Module::parse(src2).expect("Example 2 failed");
+
+    let src3 = r#"
+    let A = 4
+    let B = spawn util:timeout(5)
+    == start
+    B <- #time_to_die
+    "#;
+
+    Module::parse(src3).expect("Example 3 failed");
 }
