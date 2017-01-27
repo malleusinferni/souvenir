@@ -17,7 +17,8 @@ impl Module {
             reg: 0,
         };
 
-        pass.rewrite_module(self)
+        let result = pass.rewrite_module(self);
+        if cfg!(test) { Check.rewrite_module(result?) } else { result }
     }
 }
 
@@ -149,6 +150,17 @@ impl Rewriter<NameErr> for Pass {
             },
 
             Var::Register(_) => Err(NameErr::InvalidAst),
+        }
+    }
+}
+
+struct Check;
+
+impl Rewriter<NameErr> for Check {
+    fn rewrite_var(&mut self, t: Var) -> Result<Var, NameErr> {
+        match t {
+            r@Var::Register(_) => Ok(r),
+            _ => Err(NameErr::InvalidAst),
         }
     }
 }
