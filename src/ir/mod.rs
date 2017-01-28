@@ -14,16 +14,21 @@ pub struct Block(pub Vec<Instr>);
 #[derive(Copy, Clone, Debug)]
 pub enum Instr {
     Eval(StackFn),
-    Freeze(StackAddr),
+    Write,
     Trim(StackAddr),
     PushLit(Value),
     PushVar(StackAddr),
-    PushMyPid,
     Jump(BlockID),
     JumpIf(BlockID),
     Spawn(FuncID),
     Recur(FuncID),
     SendMessage,
+    Sleep(f32),
+    TrapInstall(BlockID),
+    TrapEnable(u32),
+    TrapDisable(u32),
+    TrapReject,
+    TrapResume,
     Nop,
     Bye,
     Hcf,
@@ -32,7 +37,7 @@ pub enum Instr {
 #[derive(Copy, Clone, Debug)]
 pub enum Value {
     Undefined,
-    Int(u32),
+    Int(i32),
     Atom(u32),
     ActorId(u32),
     ConstStrId(u32),
@@ -47,7 +52,12 @@ pub enum StackFn {
     Div,
     Mul,
     Not,
+    Swap,
     Roll,
+    GetPid,
+    Enclose,
+    Discard,
+    Native(u32),
 }
 
 #[derive(Copy, Clone, Debug)]
@@ -66,4 +76,16 @@ pub struct ModuleID(pub u32);
 pub struct FuncRef {
     module: ModuleID,
     block: BlockID,
+}
+
+#[cfg(test)]
+pub mod example {
+    use ir::*;
+
+    pub static ADD_TWO_NUMBERS: &'static [Instr] = &[
+        Instr::PushLit(Value::Int(2)),
+        Instr::PushLit(Value::Int(2)),
+        Instr::Eval(StackFn::Add),
+        Instr::Write,
+    ];
 }
