@@ -7,6 +7,7 @@ pub mod tokenizer;
 
 pub mod driver;
 pub mod pass;
+pub mod ir;
 
 #[test]
 fn parse_examples() {
