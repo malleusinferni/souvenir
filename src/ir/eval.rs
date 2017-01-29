@@ -5,7 +5,7 @@ use ir::*;
 #[derive(Clone, Debug)]
 pub struct Process {
     /// Variables in current lexical scope.
-    pub stack: Vec<Value>,
+    pub stack: Stack,
 
     /// Data structures referenced by live variables.
     pub heap: Vec<Value>,
@@ -22,9 +22,6 @@ pub struct Process {
     /// Block and offset of next instruction to be executed.
     pub pc: (BlockID, u32),
 
-    /// Write barrier: Index of first writable value on the stack.
-    pub wb: u32,
-
     /// State of the current message handler, if one is active.
     pub ts: Option<TrapState>,
 }
@@ -38,7 +35,7 @@ pub struct TrapState {
     pub pc: (BlockID, u32),
 
     /// Local copy of the stack.
-    pub stack: Vec<Value>,
+    pub stack: Stack,
 }
 
 #[derive(Clone, Debug)]
@@ -53,6 +50,15 @@ pub struct Trap {
     pub wb: u32,
 }
 
+#[derive(Clone, Debug)]
+pub struct Stack {
+    pub contents: Vec<Value>,
+
+    /// Starting index of the working set.
+    pub wb: u32,
+}
+
+#[derive(Copy, Clone, Debug)]
 pub enum AddrSpace {
     Stack,
     Heap,
@@ -71,16 +77,28 @@ impl Process {
     pub fn step(&mut self) -> Ret<()> {
         match self.op {
             Instr::TrapInstall(st) => {
+                if self.ts.is_some() {
+                    return Err(RunErr::IllegalInstr(self.op));
+                }
+
                 self.traps.push_front(Trap {
                     st: st,
-                    wb: self.wb,
+                    wb: self.stack.wb,
                     armed: true,
                 });
             },
 
             Instr::PushVar(StackAddr(u)) => {
-                let val = self.stack_load(u as usize)?;
-                self.stack_push(val)?;
+                let val = self.stack_ref().read(u as usize)?;
+                self.stack_mut().push(val)?;
+            },
+
+            Instr::PushLit(val) => {
+                self.stack_mut().push(val)?;
+            },
+
+            Instr::Write => {
+                self.stack_mut().write()?;
             },
 
             _ => unimplemented!(),
@@ -89,8 +107,22 @@ impl Process {
         Ok(())
     }
 
+    pub fn stack_ref(&self) -> &Stack {
+        match self.ts.as_ref() {
+            Some(ts) => &ts.stack,
+            None => &self.stack,
+        }
+    }
+
+    pub fn stack_mut(&mut self) -> &mut Stack {
+        match self.ts.as_mut() {
+            Some(ts) => &mut ts.stack,
+            None => &mut self.stack,
+        }
+    }
+
     pub fn copy_args(&mut self, other: &Process) -> Ret<()> {
-        for &arg in other.working_set()? {
+        for &arg in other.stack_ref().read_working_set() {
             let mut arg = arg;
 
             match &mut arg {
@@ -107,32 +139,7 @@ impl Process {
                 _ => (),
             }
 
-            self.stack.push(arg);
-            self.wb += 1;
-        }
-
-        Ok(())
-    }
-
-    pub fn working_set(&self) -> Ret<&[Value]> {
-        unimplemented!()
-    }
-
-    pub fn stack_load(&self, addr: usize) -> Ret<Value> {
-        let active_stack = match &self.ts {
-            &Some(ref ts) => &ts.stack,
-            &None => &self.stack,
-        };
-
-        // FIXME: Better error detection
-        Ok(active_stack[addr])
-    }
-
-    pub fn stack_push(&mut self, value: Value) -> Ret<()> {
-        if let Some(ts) = self.ts.as_mut() {
-            ts.stack.push(value);
-        } else {
-            self.stack.push(value);
+            self.stack_mut().push(arg)?;
         }
 
         Ok(())
@@ -196,4 +203,36 @@ impl Process {
         self.strings.push(s);
         Ok(addr)
     }
+}
+
+impl Stack {
+    pub fn push(&mut self, value: Value) -> Ret<()> {
+        self.contents.push(value);
+
+        Ok(())
+    }
+
+    pub fn read(&self, addr: usize) -> Ret<Value> {
+        if addr < self.wb as usize {
+            Ok(self.contents[addr])
+        } else {
+            Err(RunErr::SegfaultIn(AddrSpace::Stack))
+        }
+    }
+
+    pub fn write(&mut self) -> Ret<()> {
+        self.wb += 1;
+
+        if self.wb as usize > self.contents.len() {
+            Err(RunErr::SegfaultIn(AddrSpace::Stack))
+        } else {
+            Ok(())
+        }
+    }
+
+    pub fn read_working_set(&self) -> &[Value] {
+        &self.contents[self.wb as usize ..]
+    }
+
+    // TODO: API for editing the working set
 }

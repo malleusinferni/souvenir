@@ -15,6 +15,7 @@ pub struct Block(pub Vec<Instr>);
 pub enum Instr {
     Eval(StackFn),
     Write,
+    Enclose,
     Trim(StackAddr),
     PushLit(Value),
     PushVar(StackAddr),
@@ -55,7 +56,6 @@ pub enum StackFn {
     Swap,
     Roll,
     GetPid,
-    Enclose,
     Discard,
     Native(u32),
 }
