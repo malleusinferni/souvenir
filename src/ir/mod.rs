@@ -23,6 +23,7 @@ pub enum Instr {
     JumpIf(BlockID),
     Spawn(FuncID),
     Recur(FuncID),
+    Native(NativeFn),
     SendMessage,
     Sleep(f32),
     TrapInstall(BlockID),
@@ -35,7 +36,7 @@ pub enum Instr {
     Hcf,
 }
 
-#[derive(Copy, Clone, Debug)]
+#[derive(Copy, Clone, Debug, PartialEq)]
 pub enum Value {
     Undefined,
     Int(i32),
@@ -54,10 +55,14 @@ pub enum StackFn {
     Mul,
     Not,
     Swap,
+    Discard,
+}
+
+#[derive(Copy, Clone, Debug)]
+pub enum NativeFn {
     Roll,
     GetPid,
-    Discard,
-    Native(u32),
+    Custom(u32),
 }
 
 #[derive(Copy, Clone, Debug)]
@@ -88,4 +93,18 @@ pub mod example {
         Instr::Eval(StackFn::Add),
         Instr::Write,
     ];
+
+    #[test]
+    fn two_plus_two() {
+        use ir::eval::Process;
+
+        let mut p = Process::new();
+
+        for &instr in ADD_TWO_NUMBERS {
+            p.op = instr;
+            p.step().unwrap();
+        }
+
+        assert_eq!(&p.stack.contents, &[Value::Int(4)]);
+    }
 }

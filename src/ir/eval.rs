@@ -65,15 +65,43 @@ pub enum AddrSpace {
     StringHeap,
 }
 
+#[derive(Copy, Clone, Debug)]
+pub enum TypeTag {
+    List,
+    Str,
+    Atom,
+    ActorId,
+    Integer,
+}
+
+#[derive(Copy, Clone, Debug)]
 pub enum RunErr {
     SegfaultIn(AddrSpace),
     CorruptionIn(AddrSpace),
     IllegalInstr(Instr),
+    BadFetch(BlockID, u32),
+    WrongType(Value, TypeTag),
+    DividedByZero,
 }
 
 pub type Ret<T> = Result<T, RunErr>;
 
 impl Process {
+    pub fn new() -> Self {
+        Process {
+            stack: Stack {
+                contents: vec![],
+                wb: 0,
+            },
+            heap: vec![],
+            strings: vec![],
+            traps: VecDeque::new(),
+            ts: None,
+            op: Instr::Nop,
+            pc: (BlockID(0), 0),
+        }
+    }
+
     pub fn step(&mut self) -> Ret<()> {
         match self.op {
             Instr::TrapInstall(st) => {
@@ -88,6 +116,20 @@ impl Process {
                 });
             },
 
+            Instr::TrapEnable(u) => {
+                match self.traps.get_mut(u as usize) {
+                    Some(trap) => trap.armed = true,
+                    None => return Err(RunErr::IllegalInstr(self.op)),
+                }
+            },
+
+            Instr::TrapDisable(u) => {
+                match self.traps.get_mut(u as usize) {
+                    Some(trap) => trap.armed = false,
+                    None => return Err(RunErr::IllegalInstr(self.op)),
+                }
+            },
+
             Instr::PushVar(StackAddr(u)) => {
                 let val = self.stack_ref().read(u as usize)?;
                 self.stack_mut().push(val)?;
@@ -97,12 +139,37 @@ impl Process {
                 self.stack_mut().push(val)?;
             },
 
+            Instr::Eval(f) => {
+                self.stack_mut().eval(f)?;
+            },
+
             Instr::Write => {
                 self.stack_mut().write()?;
             },
 
+            Instr::Trim(StackAddr(u)) => {
+                self.stack_mut().trim(u as usize)?;
+            },
+
+            Instr::Enclose => {
+                unimplemented!()
+            },
+
             _ => unimplemented!(),
         }
+
+        Ok(())
+    }
+
+    pub fn fetch(&mut self, program: &Program) -> Ret<()> {
+        let (block_id, offset) = match self.ts.as_ref() {
+            Some(ts) => ts.pc,
+            None => self.pc,
+        };
+
+        self.op = *program.code.get(block_id.0 as usize)
+            .and_then(|&Block(ref b)| b.get(offset as usize))
+            .ok_or(RunErr::BadFetch(block_id, offset))?;
 
         Ok(())
     }
@@ -212,6 +279,14 @@ impl Stack {
         Ok(())
     }
 
+    pub fn pop(&mut self) -> Ret<Value> {
+        if self.contents.len() > self.wb as usize {
+            Ok(self.contents.pop().unwrap())
+        } else {
+            Err(RunErr::SegfaultIn(AddrSpace::Stack))
+        }
+    }
+
     pub fn read(&self, addr: usize) -> Ret<Value> {
         if addr < self.wb as usize {
             Ok(self.contents[addr])
@@ -230,9 +305,71 @@ impl Stack {
         }
     }
 
+    pub fn trim(&mut self, len: usize) -> Ret<()> {
+        self.contents.truncate(len);
+        self.wb = len as u32;
+        Ok(())
+    }
+
     pub fn read_working_set(&self) -> &[Value] {
         &self.contents[self.wb as usize ..]
     }
 
-    // TODO: API for editing the working set
+    pub fn eval(&mut self, f: StackFn) -> Ret<()> {
+        match f {
+            StackFn::Add => {
+                let rhs = self.pop()?.as_int()?;
+                let lhs = self.pop()?.as_int()?;
+                self.push(Value::Int(lhs + rhs))
+            },
+
+            StackFn::Sub => {
+                let rhs = self.pop()?.as_int()?;
+                let lhs = self.pop()?.as_int()?;
+                self.push(Value::Int(lhs - rhs))
+            },
+
+            StackFn::Div => {
+                let rhs = self.pop()?.as_int()?;
+                if rhs == 0 { return Err(RunErr::DividedByZero); }
+                let lhs = self.pop()?.as_int()?;
+                self.push(Value::Int(lhs / rhs))
+            },
+
+            StackFn::Mul => {
+                let rhs = self.pop()?.as_int()?;
+                let lhs = self.pop()?.as_int()?;
+                self.push(Value::Int(lhs * rhs))
+            },
+
+            StackFn::Not => {
+                let val = match self.pop()?.as_int()? {
+                    0 => 1,
+                    _ => 0,
+                };
+                self.push(Value::Int(val))
+            },
+
+            StackFn::Swap => {
+                let rhs = self.pop()?;
+                let lhs = self.pop()?;
+                self.push(rhs)?;
+                self.push(lhs)
+            },
+
+            StackFn::Discard => {
+                self.pop()?;
+                Ok(())
+            },
+        }
+    }
+}
+
+impl Value {
+    pub fn as_int(self) -> Ret<i32> {
+        match self {
+            Value::Int(i) => Ok(i),
+            other => Err(RunErr::WrongType(other, TypeTag::Integer)),
+        }
+    }
 }
