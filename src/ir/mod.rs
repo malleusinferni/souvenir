@@ -2,14 +2,24 @@ pub mod eval;
 
 #[derive(Clone, Debug)]
 pub struct Program {
+    /// String constants in shared memory.
     pub strings: Vec<String>,
-    pub code: Vec<Block>,
-    pub funcs: Vec<FuncRef>,
+
+    /// Instructions from all blocks.
+    pub code: Vec<Instr>,
+
+    /// Maps `Label`s to indices into `code`.
+    pub labels: Vec<Address>,
+
+    /// Table of function definitions. Indexed by `FuncID`.
+    pub funcs: Vec<FuncDef>,
+
+    /// Pre-evaluated environments for module-scoped variables.
     pub modenvs: Vec<eval::Process>,
 }
 
-#[derive(Clone, Debug)]
-pub struct Block(pub Vec<Instr>);
+#[derive(Copy, Clone, Debug)]
+pub struct Address(pub u32);
 
 #[derive(Copy, Clone, Debug)]
 pub enum Instr {
@@ -19,16 +29,15 @@ pub enum Instr {
     Trim(StackAddr),
     PushLit(Value),
     PushVar(StackAddr),
-    Jump(BlockID),
-    JumpIf(BlockID),
+    Jump(Label),
+    JumpIf(Label),
     Spawn(FuncID),
     Recur(FuncID),
     Native(NativeFn),
-    SendMessage,
+    SendMessage(StackAddr),
     Sleep(f32),
-    TrapInstall(BlockID),
-    TrapEnable(u32),
-    TrapDisable(u32),
+    TrapInstall(Label),
+    TrapRemove(Label),
     TrapReject,
     TrapResume,
     Nop,
@@ -68,8 +77,8 @@ pub enum NativeFn {
 #[derive(Copy, Clone, Debug)]
 pub struct StackAddr(pub u32);
 
-#[derive(Copy, Clone, Debug)]
-pub struct BlockID(pub u32);
+#[derive(Copy, Clone, Debug, PartialEq)]
+pub struct Label(pub u32);
 
 #[derive(Copy, Clone, Debug)]
 pub struct FuncID(pub u32);
@@ -78,9 +87,13 @@ pub struct FuncID(pub u32);
 pub struct ModuleID(pub u32);
 
 #[derive(Copy, Clone, Debug)]
-pub struct FuncRef {
+pub struct FuncDef {
     module: ModuleID,
-    block: BlockID,
+    block: Label,
+}
+
+impl Default for Instr {
+    fn default() -> Self { Instr::Nop }
 }
 
 #[cfg(test)]
@@ -98,11 +111,11 @@ pub mod example {
     fn two_plus_two() {
         use ir::eval::Process;
 
-        let mut p = Process::new();
+        let mut p = Process::default();
 
         for &instr in ADD_TWO_NUMBERS {
             p.op = instr;
-            p.step().unwrap();
+            p.exec().unwrap();
         }
 
         assert_eq!(&p.stack.contents, &[Value::Int(4)]);

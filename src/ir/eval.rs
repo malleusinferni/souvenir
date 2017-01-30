@@ -1,61 +1,73 @@
-use std::collections::VecDeque;
-
 use ir::*;
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Default)]
 pub struct Process {
     /// Variables in current lexical scope.
     pub stack: Stack,
 
     /// Data structures referenced by live variables.
-    pub heap: Vec<Value>,
+    pub heap: Heap,
 
     /// Strings generated at runtime.
-    pub strings: Vec<String>,
+    pub strings: Streap,
 
     /// Available message handlers.
-    pub traps: VecDeque<Trap>,
+    pub traps: Vec<Trap>,
 
     /// Prefetched instruction. Signifies current process state.
     pub op: Instr,
 
-    /// Block and offset of next instruction to be executed.
-    pub pc: (BlockID, u32),
-
-    /// State of the current message handler, if one is active.
-    pub ts: Option<TrapState>,
+    /// Address of the next instruction to be executed.
+    pub pc: u32,
 }
 
-#[derive(Clone, Debug)]
-pub struct TrapState {
-    /// Index into the process's list of available handlers.
-    pub id: u32,
-
-    /// Block and offset of next instruction to be executed.
-    pub pc: (BlockID, u32),
-
-    /// Local copy of the stack.
-    pub stack: Stack,
-}
-
-#[derive(Clone, Debug)]
+#[derive(Copy, Clone, Debug)]
 pub struct Trap {
     /// Entry point of trap.
-    pub st: BlockID,
+    pub label: Label,
 
-    /// Whether this trap should be ignored when delivering messages.
-    pub armed: bool,
-
-    /// Starting index of the working set.
-    pub wb: u32,
+    /// Heap address of the trap's closure environment.
+    pub env: Value,
 }
 
 #[derive(Clone, Debug)]
 pub struct Stack {
+    /// Values held in the stack.
     pub contents: Vec<Value>,
 
     /// Starting index of the working set.
     pub wb: u32,
+
+    /// Message handler stack frame, if a message handler is running.
+    pub ts: Option<TrapState>,
+}
+
+#[derive(Copy, Clone, Debug)]
+pub struct TrapState {
+    /// Return address to restore execution when the last handler exits.
+    pub ra: u32,
+
+    /// Index into `traps` of the currently executing handler.
+    pub id: u32,
+
+    /// Offset into the parent stack where the local frame begins.
+    pub sp: u32,
+
+    /// Starting index of the working set.
+    pub wb: u32,
+
+    /// Index on the heap of the message to handle.
+    pub hm: u32,
+}
+
+#[derive(Clone, Debug, Default)]
+pub struct Heap {
+    pub contents: Vec<Value>,
+}
+
+#[derive(Clone, Debug, Default)]
+pub struct Streap {
+    pub contents: Vec<String>,
 }
 
 #[derive(Copy, Clone, Debug)]
@@ -78,8 +90,10 @@ pub enum TypeTag {
 pub enum RunErr {
     SegfaultIn(AddrSpace),
     CorruptionIn(AddrSpace),
+    StackOverflow,
+    StackUnderflow,
     IllegalInstr(Instr),
-    BadFetch(BlockID, u32),
+    BadFetch(u32),
     WrongType(Value, TypeTag),
     DividedByZero,
 }
@@ -87,68 +101,67 @@ pub enum RunErr {
 pub type Ret<T> = Result<T, RunErr>;
 
 impl Process {
-    pub fn new() -> Self {
-        Process {
-            stack: Stack {
-                contents: vec![],
-                wb: 0,
-            },
-            heap: vec![],
-            strings: vec![],
-            traps: VecDeque::new(),
-            ts: None,
-            op: Instr::Nop,
-            pc: (BlockID(0), 0),
-        }
-    }
-
-    pub fn step(&mut self) -> Ret<()> {
+    pub fn exec(&mut self) -> Ret<()> {
         match self.op {
-            Instr::TrapInstall(st) => {
-                if self.ts.is_some() {
-                    return Err(RunErr::IllegalInstr(self.op));
-                }
+            Instr::TrapInstall(label) => {
+                let env = self.heap.write(self.stack.read_registers())?;
 
-                self.traps.push_front(Trap {
-                    st: st,
-                    wb: self.stack.wb,
-                    armed: true,
+                self.traps.push(Trap {
+                    label: label,
+                    env: env,
                 });
             },
 
-            Instr::TrapEnable(u) => {
-                match self.traps.get_mut(u as usize) {
-                    Some(trap) => trap.armed = true,
-                    None => return Err(RunErr::IllegalInstr(self.op)),
+            Instr::TrapRemove(label) => {
+                for trap in self.traps.iter_mut().rev() {
+                    if trap.label != label { continue; }
+                    trap.disarm();
                 }
             },
 
-            Instr::TrapDisable(u) => {
-                match self.traps.get_mut(u as usize) {
-                    Some(trap) => trap.armed = false,
-                    None => return Err(RunErr::IllegalInstr(self.op)),
+            Instr::TrapReject => {
+                let ts: TrapState = self.stack.leave()?;
+                self.pc = ts.ra;
+
+                if let Some(next) = ts.id.checked_sub(1) {
+                    let &Trap { label, env } = self.traps.get(next as usize)
+                        .ok_or(RunErr::IllegalInstr(self.op))?;
+
+                    // FIXME: This won't work. We have to set self.pc.
+                    self.op = Instr::Jump(label);
+
+                    let env = self.heap.read(env.as_list_addr()?)?;
+                    self.stack.enter([self.pc, next, ts.hm], env)?;
+                    //let msg = self.heap.read(ts.hm)?;
+                    self.stack.push(Value::HeapListAddr(ts.hm))?;
+                    self.stack.write()?;
                 }
+            },
+
+            Instr::TrapResume => {
+                let ts: TrapState = self.stack.leave()?;
+                self.pc = ts.ra;
             },
 
             Instr::PushVar(StackAddr(u)) => {
-                let val = self.stack_ref().read(u as usize)?;
-                self.stack_mut().push(val)?;
+                let val = self.stack.read(u as usize)?;
+                self.stack.push(val)?;
             },
 
             Instr::PushLit(val) => {
-                self.stack_mut().push(val)?;
+                self.stack.push(val)?;
             },
 
             Instr::Eval(f) => {
-                self.stack_mut().eval(f)?;
+                self.stack.eval(f)?;
             },
 
             Instr::Write => {
-                self.stack_mut().write()?;
+                self.stack.write()?;
             },
 
             Instr::Trim(StackAddr(u)) => {
-                self.stack_mut().trim(u as usize)?;
+                self.stack.trim(u as usize)?;
             },
 
             Instr::Enclose => {
@@ -162,117 +175,64 @@ impl Process {
     }
 
     pub fn fetch(&mut self, program: &Program) -> Ret<()> {
-        let (block_id, offset) = match self.ts.as_ref() {
-            Some(ts) => ts.pc,
-            None => self.pc,
-        };
-
-        self.op = *program.code.get(block_id.0 as usize)
-            .and_then(|&Block(ref b)| b.get(offset as usize))
-            .ok_or(RunErr::BadFetch(block_id, offset))?;
+        self.op = *program.code.get(self.pc as usize)
+            .ok_or(RunErr::BadFetch(self.pc))?;
 
         Ok(())
     }
 
-    pub fn stack_ref(&self) -> &Stack {
-        match self.ts.as_ref() {
-            Some(ts) => &ts.stack,
-            None => &self.stack,
-        }
-    }
+    pub fn get_fn_args(&mut self, other: &Process) -> Ret<usize> {
+        let argv = other.stack.read_working_set();
+        let argc = argv.len();
 
-    pub fn stack_mut(&mut self) -> &mut Stack {
-        match self.ts.as_mut() {
-            Some(ts) => &mut ts.stack,
-            None => &mut self.stack,
-        }
-    }
-
-    pub fn copy_args(&mut self, other: &Process) -> Ret<()> {
-        for &arg in other.stack_ref().read_working_set() {
-            let mut arg = arg;
-
-            match &mut arg {
-                &mut Value::HeapListAddr(ref mut u) => {
-                    *u = self.list_copy(*u as usize, other)?;
-                },
-
-                &mut Value::HeapStrAddr(ref mut u) => {
-                    *u = self.string_write({
-                        other.string_read(*u as usize)?.to_owned()
-                    })?;
-                },
-
-                _ => (),
-            }
-
-            self.stack_mut().push(arg)?;
+        for &value in argv {
+            let local = self.local_copy(value, other)?;
+            self.stack.push(local)?;
+            self.stack.write()?;
         }
 
-        Ok(())
+        Ok(argc)
     }
 
-    pub fn list_copy(&mut self, addr: usize, other: &Process) -> Ret<u32> {
-        let list = other.list_read(addr)?;
-        let mut buf = Vec::with_capacity(list.len());
-        for &value in list {
-            buf.push(match value {
-                Value::HeapListAddr(u) => {
-                    let local_addr = self.list_copy(u as usize, other)?;
-                    Value::HeapListAddr(local_addr)
-                },
+    pub fn local_copy(&mut self, v: Value, other: &Process) -> Ret<Value> {
+        match v {
+            Value::HeapListAddr(u) => {
+                let list = other.heap.read(u as usize)?;
+                let mut buf = Vec::with_capacity(list.len());
+                for &value in list {
+                    buf.push(self.local_copy(value, other)?);
+                }
+                self.heap.write(&buf)
+            },
 
-                Value::HeapStrAddr(u) => {
-                    let string = other.string_read(u as usize)?.to_owned();
-                    Value::HeapStrAddr(self.string_write(string)?)
-                },
+            Value::HeapStrAddr(u) => {
+                let string = other.strings.read(u as usize)?;
+                self.strings.write(string.to_owned())
+            },
 
-                // These are stored in global program memory
-                //Value::ConstStrId(_) => ...
-
-                other => other,
-            })
+            other => Ok(other),
         }
-
-        self.list_write(buf)
     }
+}
 
-    pub fn list_read(&self, addr: usize) -> Ret<&[Value]> {
-        let length = match self.heap.get(addr) {
-            Some(&Value::Int(count)) if count >= 0 => count as usize,
-            _ => return Err(RunErr::CorruptionIn(AddrSpace::Heap)),
-        };
-
-        let start = addr + 1;
-
-        if start + length > self.heap.len() {
-            return Err(RunErr::SegfaultIn(AddrSpace::Heap));
+impl Default for Stack {
+    fn default() -> Self {
+        Stack {
+            contents: Vec::with_capacity(32),
+            wb: 0,
+            ts: None,
         }
-
-        Ok(&self.heap[start .. start + length])
-    }
-
-    pub fn list_write(&mut self, values: Vec<Value>) -> Ret<u32> {
-        let addr = self.heap.len() as u32;
-        self.heap.push(Value::Int(values.len() as i32));
-        self.heap.extend(values.into_iter());
-        Ok(addr)
-    }
-
-    pub fn string_read(&self, addr: usize) -> Ret<&str> {
-        self.strings.get(addr)
-            .map(|s| s.as_ref())
-            .ok_or(RunErr::SegfaultIn(AddrSpace::StringHeap))
-    }
-
-    pub fn string_write(&mut self, s: String) -> Ret<u32> {
-        let addr = self.strings.len() as u32;
-        self.strings.push(s);
-        Ok(addr)
     }
 }
 
 impl Stack {
+    fn write_barrier(&self) -> usize {
+        match self.ts {
+            Some(ts) => ts.wb as usize,
+            None => self.wb as usize,
+        }
+    }
+
     pub fn push(&mut self, value: Value) -> Ret<()> {
         self.contents.push(value);
 
@@ -280,15 +240,19 @@ impl Stack {
     }
 
     pub fn pop(&mut self) -> Ret<Value> {
-        if self.contents.len() > self.wb as usize {
+        if self.contents.len() > self.write_barrier() {
             Ok(self.contents.pop().unwrap())
         } else {
             Err(RunErr::SegfaultIn(AddrSpace::Stack))
         }
     }
 
-    pub fn read(&self, addr: usize) -> Ret<Value> {
-        if addr < self.wb as usize {
+    pub fn read(&self, mut addr: usize) -> Ret<Value> {
+        if let Some(ts) = self.ts {
+            addr += ts.sp as usize;
+        }
+
+        if addr < self.write_barrier() {
             Ok(self.contents[addr])
         } else {
             Err(RunErr::SegfaultIn(AddrSpace::Stack))
@@ -296,23 +260,70 @@ impl Stack {
     }
 
     pub fn write(&mut self) -> Ret<()> {
-        self.wb += 1;
+        if let Some(ts) = self.ts.as_mut() {
+            ts.wb += 1;
+        } else {
+            self.wb += 1;
+        }
 
-        if self.wb as usize > self.contents.len() {
+        // NOTE: These can be equal, meaning the working set is empty
+        if self.write_barrier() > self.contents.len() {
             Err(RunErr::SegfaultIn(AddrSpace::Stack))
         } else {
             Ok(())
         }
     }
 
-    pub fn trim(&mut self, len: usize) -> Ret<()> {
+    pub fn trim(&mut self, mut len: usize) -> Ret<()> {
+        if let Some(ts) = self.ts {
+            len += ts.sp as usize;
+        }
+
         self.contents.truncate(len);
-        self.wb = len as u32;
+
+        if let Some(ts) = self.ts.as_mut() {
+            ts.wb = len as u32;
+        } else {
+            self.wb = len as u32;
+        }
+
         Ok(())
     }
 
+    pub fn enter(&mut self, reg: [u32; 3], env: &[Value]) -> Ret<()> {
+        if self.ts.is_some() { return Err(RunErr::StackOverflow); }
+
+        let sp = self.contents.len() as u32;
+
+        self.ts = Some(TrapState {
+            ra: reg[0],
+            id: reg[1],
+            hm: reg[2],
+            sp: sp,
+            wb: sp,
+        });
+
+        for &value in env {
+            self.push(value)?;
+            self.write()?;
+        }
+
+        Ok(())
+    }
+
+    pub fn leave(&mut self) -> Ret<TrapState> {
+        self.ts.take().ok_or(RunErr::StackUnderflow)
+    }
+
     pub fn read_working_set(&self) -> &[Value] {
-        &self.contents[self.wb as usize ..]
+        &self.contents[self.write_barrier() ..]
+    }
+
+    pub fn read_registers(&self) -> &[Value] {
+        match self.ts {
+            Some(ts) => &self.contents[ts.sp as usize .. ts.wb as usize],
+            None => &self.contents[0 .. self.wb as usize],
+        }
     }
 
     pub fn eval(&mut self, f: StackFn) -> Ret<()> {
@@ -365,11 +376,65 @@ impl Stack {
     }
 }
 
+impl Heap {
+    pub fn write(&mut self, values: &[Value]) -> Ret<Value> {
+        let addr = self.contents.len() as u32;
+        self.contents.push(Value::Int(values.len() as i32));
+        self.contents.extend_from_slice(values);
+        Ok(Value::HeapListAddr(addr))
+    }
+
+    pub fn read(&self, addr: usize) -> Ret<&[Value]> {
+        let &header = self.contents.get(addr)
+            .ok_or(RunErr::SegfaultIn(AddrSpace::Heap))?;
+
+        let start = addr + 1;
+
+        let length = match header {
+            Value::Int(n) if n >= 0 => Ok(n as usize),
+            _ => Err(RunErr::CorruptionIn(AddrSpace::Heap)),
+        }?;
+
+        if start + length > self.contents.len() {
+            Err(RunErr::SegfaultIn(AddrSpace::Heap))
+        } else {
+            Ok(&self.contents[start .. start + length])
+        }
+    }
+}
+
+impl Streap {
+    pub fn write(&mut self, s: String) -> Ret<Value> {
+        let addr = self.contents.len() as u32;
+        self.contents.push(s);
+        Ok(Value::HeapStrAddr(addr))
+    }
+
+    pub fn read(&self, addr: usize) -> Ret<&str> {
+        self.contents.get(addr)
+            .map(|s| s.as_ref())
+            .ok_or(RunErr::SegfaultIn(AddrSpace::StringHeap))
+    }
+}
+
 impl Value {
     pub fn as_int(self) -> Ret<i32> {
         match self {
             Value::Int(i) => Ok(i),
             other => Err(RunErr::WrongType(other, TypeTag::Integer)),
         }
+    }
+
+    pub fn as_list_addr(self) -> Ret<usize> {
+        match self {
+            Value::HeapListAddr(n) => Ok(n as usize),
+            other => Err(RunErr::WrongType(other, TypeTag::List)),
+        }
+    }
+}
+
+impl Trap {
+    fn disarm(&mut self) {
+        unimplemented!()
     }
 }
