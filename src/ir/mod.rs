@@ -99,8 +99,18 @@ impl Default for Instr {
 #[cfg(test)]
 pub mod example {
     use ir::*;
+    use ir::eval::Process;
 
-    pub static ADD_TWO_NUMBERS: &'static [Instr] = &[
+    impl Process {
+        fn evaluate(&mut self, code: &[Instr]) {
+            for &instr in code {
+                self.op = instr;
+                self.exec().unwrap();
+            }
+        }
+    }
+
+    static ADD_TWO_NUMBERS: &'static [Instr] = &[
         Instr::PushLit(Value::Int(2)),
         Instr::PushLit(Value::Int(2)),
         Instr::Eval(StackFn::Add),
@@ -109,15 +119,24 @@ pub mod example {
 
     #[test]
     fn two_plus_two() {
-        use ir::eval::Process;
-
         let mut p = Process::default();
-
-        for &instr in ADD_TWO_NUMBERS {
-            p.op = instr;
-            p.exec().unwrap();
-        }
-
+        p.evaluate(ADD_TWO_NUMBERS);
         assert_eq!(&p.stack.contents, &[Value::Int(4)]);
+    }
+
+    static BUILD_A_LIST: &'static [Instr] = &[
+        Instr::PushLit(Value::Int(1)),
+        Instr::PushLit(Value::Int(2)),
+        Instr::PushLit(Value::Int(3)),
+        Instr::PushLit(Value::Int(4)),
+        Instr::Enclose,
+        Instr::Write,
+    ];
+
+    #[test]
+    fn build_a_list() {
+        let mut p = Process::default();
+        p.evaluate(BUILD_A_LIST);
+        assert_eq!(&p.stack.contents, &[Value::HeapListAddr(0)]);
     }
 }

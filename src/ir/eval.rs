@@ -165,7 +165,9 @@ impl Process {
             },
 
             Instr::Enclose => {
-                unimplemented!()
+                let contents = self.stack.take_working_set();
+                let addr = self.heap.write(&contents)?;
+                self.stack.push(addr)?;
             },
 
             _ => unimplemented!(),
@@ -317,6 +319,11 @@ impl Stack {
 
     pub fn read_working_set(&self) -> &[Value] {
         &self.contents[self.write_barrier() ..]
+    }
+
+    pub fn take_working_set(&mut self) -> Vec<Value> {
+        let wb = self.write_barrier();
+        self.contents.split_off(wb)
     }
 
     pub fn read_registers(&self) -> &[Value] {
