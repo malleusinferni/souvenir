@@ -102,41 +102,49 @@ pub mod example {
     use ir::eval::Process;
 
     impl Process {
-        fn evaluate(&mut self, code: &[Instr]) {
+        fn evaluate(code: &[Instr]) -> Self {
+            let mut this = Self::default();
+
             for &instr in code {
-                self.op = instr;
-                self.exec().unwrap();
+                this.op = instr;
+                this.exec().unwrap();
             }
+
+            this
         }
     }
 
-    static ADD_TWO_NUMBERS: &'static [Instr] = &[
-        Instr::PushLit(Value::Int(2)),
-        Instr::PushLit(Value::Int(2)),
-        Instr::Eval(StackFn::Add),
-        Instr::Write,
-    ];
-
     #[test]
     fn two_plus_two() {
-        let mut p = Process::default();
-        p.evaluate(ADD_TWO_NUMBERS);
+        let p = Process::evaluate({&[
+            Instr::PushLit(Value::Int(2)),
+            Instr::PushLit(Value::Int(2)),
+            Instr::Eval(StackFn::Add),
+            Instr::Write,
+        ]});
+
         assert_eq!(&p.stack.contents, &[Value::Int(4)]);
     }
 
-    static BUILD_A_LIST: &'static [Instr] = &[
-        Instr::PushLit(Value::Int(1)),
-        Instr::PushLit(Value::Int(2)),
-        Instr::PushLit(Value::Int(3)),
-        Instr::PushLit(Value::Int(4)),
-        Instr::Enclose,
-        Instr::Write,
-    ];
-
     #[test]
     fn build_a_list() {
-        let mut p = Process::default();
-        p.evaluate(BUILD_A_LIST);
+        let p = Process::evaluate({&[
+            Instr::PushLit(Value::Int(1)),
+            Instr::PushLit(Value::Int(2)),
+            Instr::PushLit(Value::Int(3)),
+            Instr::PushLit(Value::Int(4)),
+            Instr::Enclose,
+            Instr::Write,
+        ]});
+
         assert_eq!(&p.stack.contents, &[Value::HeapListAddr(0)]);
+    }
+
+    #[test]
+    #[should_panic]
+    fn stack_underflow() {
+        Process::evaluate({&[
+            Instr::Eval(StackFn::Swap),
+        ]});
     }
 }
