@@ -48,7 +48,6 @@ pub enum Instr {
 
 #[derive(Copy, Clone, Debug, PartialEq)]
 pub enum Value {
-    Undefined,
     Int(i32),
     Atom(u32),
     ActorId(u32),
@@ -171,6 +170,7 @@ pub mod example {
             Instr::JumpIf(Label(0)),
             Instr::Hcf,
             Instr::Nop,
+            Instr::Jump(Label(0)),
         ];
 
         let labels = &[
@@ -178,8 +178,8 @@ pub mod example {
         ];
 
         for _ in code {
-            p.fetch(code).unwrap();
             p.exec(labels).unwrap();
+            p.fetch(code).unwrap();
         }
     }
 }

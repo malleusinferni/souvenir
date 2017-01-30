@@ -60,6 +60,13 @@ pub struct TrapState {
     pub wb: u32,
 }
 
+#[derive(Copy, Clone, Debug)]
+pub struct TrapCall {
+    id: u32,
+    ra: Address,
+    arg: Value,
+}
+
 #[derive(Clone, Debug, Default)]
 pub struct Heap {
     pub contents: Vec<Value>,
@@ -77,7 +84,7 @@ pub enum AddrSpace {
     StringHeap,
 }
 
-#[derive(Copy, Clone, Debug)]
+#[derive(Copy, Clone, Debug, PartialEq)]
 pub enum TypeTag {
     List,
     Str,
@@ -96,6 +103,7 @@ pub enum RunErr {
     IllegalInstr(Instr),
     BadFetch(Address),
     WrongType(Value, TypeTag),
+    IncomparableTypes(TypeTag, TypeTag),
     DividedByZero,
 }
 
@@ -105,6 +113,13 @@ impl Process {
     pub fn exec(&mut self, jump_table: &[Address]) -> Ret<()> {
         match self.op {
             Instr::Nop => (),
+
+            Instr::Compare(rel) => {
+                let rhs = self.stack.pop()?;
+                let lhs = self.stack.pop()?;
+                let cmp = self.compare(lhs, rel, rhs)?;
+                self.stack.push(cmp)?;
+            },
 
             Instr::Jump(label) => {
                 self.jump(label, jump_table)?;
@@ -140,10 +155,11 @@ impl Process {
                     let &Trap { label, env } = self.traps.get(next as usize)
                         .ok_or(RunErr::IllegalInstr(self.op))?;
 
-                    {
-                        let env = self.heap.read(env.as_list_addr()?)?;
-                        self.stack.enter(self.pc, next, ts.arg, env)?;
-                    }
+                    self.stack.enter(TrapCall {
+                        id: next,
+                        ra: self.pc,
+                        arg: ts.arg
+                    }, self.heap.read(env.as_list_addr()?)?)?;
 
                     self.stack.push(ts.arg)?;
                     self.stack.write()?;
@@ -190,6 +206,47 @@ impl Process {
         Ok(())
     }
 
+    fn compare(&self, lhs: Value, rel: Relation, rhs: Value) -> Ret<Value> {
+        let ltype = lhs.type_tag();
+        let rtype = rhs.type_tag();
+
+        use vm::Value::*;
+
+        let cond = match (lhs, rhs) {
+            (Int(m), Int(n)) => match rel {
+                Relation::Lesser => m < n,
+                Relation::Equal => m == n,
+                Relation::Greater => m > n,
+            },
+
+            (HeapListAddr(m), HeapListAddr(n)) => {
+                let lhs = self.heap.read(m as usize)?;
+                let rhs = self.heap.read(n as usize)?;
+                match rel {
+                    Relation::Lesser => lhs.len() < rhs.len(),
+                    Relation::Greater => lhs.len() > rhs.len(),
+                    Relation::Equal => self.recursive_compare(lhs, rhs)?,
+                }
+            },
+
+            _ => return Err(RunErr::IncomparableTypes(ltype, rtype)),
+        };
+
+        Ok(Value::from_bool(cond))
+    }
+
+    #[inline(always)]
+    fn recursive_compare(&self, lhs: &[Value], rhs: &[Value]) -> Ret<bool> {
+        if lhs.len() != rhs.len() { return Ok(false); }
+
+        for (&l, &r) in lhs.iter().zip(rhs.iter()) {
+            let test = self.compare(l, Relation::Equal, r)?.as_bool()?;
+            if !test { return Ok(false); }
+        }
+
+        Ok(true)
+    }
+
     pub fn jump(&mut self, label: Label, jump_table: &[Address]) -> Ret<()> {
         let Label(u) = label;
         let &addr = jump_table.get(u as usize)
@@ -204,6 +261,8 @@ impl Process {
 
         self.op = *code.get(i as usize)
             .ok_or(RunErr::BadFetch(self.pc))?;
+
+        self.pc.0 += 1;
 
         Ok(())
     }
@@ -317,15 +376,15 @@ impl Stack {
         Ok(())
     }
 
-    pub fn enter(&mut self, ra: Address, id: u32, arg: Value, env: &[Value]) -> Ret<()> {
+    pub fn enter(&mut self, trap: TrapCall, env: &[Value]) -> Ret<()> {
         if self.ts.is_some() { return Err(RunErr::StackOverflow); }
 
         let sp = self.contents.len() as u32;
 
         self.ts = Some(TrapState {
-            ra: ra,
-            id: id,
-            arg: arg,
+            ra: trap.ra,
+            id: trap.id,
+            arg: trap.arg,
             sp: sp,
             wb: sp,
         });
@@ -386,11 +445,9 @@ impl Stack {
             },
 
             StackFn::Not => {
-                let val = match self.pop()?.as_bool()? {
-                    true => 0,
-                    false => 1,
-                };
-                self.push(Value::Int(val))
+                let old = self.pop()?.as_bool()?;
+                let new = Value::from_bool(!old);
+                self.push(new)
             },
 
             StackFn::Swap => {
@@ -450,6 +507,15 @@ impl Streap {
 }
 
 impl Value {
+    #[inline(always)]
+    pub fn from_bool(cond: bool) -> Self {
+        match cond {
+            true => Value::Int(1),
+            false => Value::Int(0),
+        }
+    }
+
+    #[inline(always)]
     pub fn as_bool(self) -> Ret<bool> {
         match self {
             Value::Int(0) => Ok(false),
@@ -470,6 +536,17 @@ impl Value {
         match self {
             Value::HeapListAddr(n) => Ok(n as usize),
             other => Err(RunErr::WrongType(other, TypeTag::List)),
+        }
+    }
+
+    pub fn type_tag(self) -> TypeTag {
+        match self {
+            Value::HeapStrAddr(_) => TypeTag::Str,
+            Value::ConstStrId(_) => TypeTag::Str,
+            Value::HeapListAddr(_) => TypeTag::List,
+            Value::Int(_) => TypeTag::Integer,
+            Value::Atom(_) => TypeTag::Atom,
+            Value::ActorId(_) => TypeTag::ActorId,
         }
     }
 }
