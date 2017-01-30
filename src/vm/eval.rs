@@ -17,8 +17,8 @@ pub struct Process {
     /// Prefetched instruction. Signifies current process state.
     pub op: Instr,
 
-    /// Address of the next instruction to be executed.
-    pub pc: u32,
+    /// Next instruction to be executed.
+    pub pc: Address,
 }
 
 #[derive(Copy, Clone, Debug)]
@@ -45,7 +45,10 @@ pub struct Stack {
 #[derive(Copy, Clone, Debug)]
 pub struct TrapState {
     /// Return address to restore execution when the last handler exits.
-    pub ra: u32,
+    pub ra: Address,
+
+    /// Index on the heap of the message to handle.
+    pub arg: Value,
 
     /// Index into `traps` of the currently executing handler.
     pub id: u32,
@@ -55,9 +58,6 @@ pub struct TrapState {
 
     /// Starting index of the working set.
     pub wb: u32,
-
-    /// Index on the heap of the message to handle.
-    pub hm: u32,
 }
 
 #[derive(Clone, Debug, Default)]
@@ -92,8 +92,9 @@ pub enum RunErr {
     CorruptionIn(AddrSpace),
     StackOverflow,
     StackUnderflow,
+    NoSuchLabel(Label),
     IllegalInstr(Instr),
-    BadFetch(u32),
+    BadFetch(Address),
     WrongType(Value, TypeTag),
     DividedByZero,
 }
@@ -101,8 +102,20 @@ pub enum RunErr {
 pub type Ret<T> = Result<T, RunErr>;
 
 impl Process {
-    pub fn exec(&mut self) -> Ret<()> {
+    pub fn exec(&mut self, jump_table: &[Address]) -> Ret<()> {
         match self.op {
+            Instr::Nop => (),
+
+            Instr::Jump(label) => {
+                self.jump(label, jump_table)?;
+            },
+
+            Instr::JumpIf(label) => {
+                if self.stack.pop()?.as_bool()? {
+                    self.jump(label, jump_table)?;
+                }
+            },
+
             Instr::TrapInstall(label) => {
                 let env = self.heap.write(self.stack.read_registers())?;
 
@@ -127,14 +140,15 @@ impl Process {
                     let &Trap { label, env } = self.traps.get(next as usize)
                         .ok_or(RunErr::IllegalInstr(self.op))?;
 
-                    // FIXME: This won't work. We have to set self.pc.
-                    self.op = Instr::Jump(label);
+                    {
+                        let env = self.heap.read(env.as_list_addr()?)?;
+                        self.stack.enter(self.pc, next, ts.arg, env)?;
+                    }
 
-                    let env = self.heap.read(env.as_list_addr()?)?;
-                    self.stack.enter([self.pc, next, ts.hm], env)?;
-                    //let msg = self.heap.read(ts.hm)?;
-                    self.stack.push(Value::HeapListAddr(ts.hm))?;
+                    self.stack.push(ts.arg)?;
                     self.stack.write()?;
+
+                    self.jump(label, jump_table)?;
                 }
             },
 
@@ -176,8 +190,19 @@ impl Process {
         Ok(())
     }
 
-    pub fn fetch(&mut self, program: &Program) -> Ret<()> {
-        self.op = *program.code.get(self.pc as usize)
+    pub fn jump(&mut self, label: Label, jump_table: &[Address]) -> Ret<()> {
+        let Label(u) = label;
+        let &addr = jump_table.get(u as usize)
+            .ok_or(RunErr::NoSuchLabel(label))?;
+        self.pc = addr;
+
+        Ok(())
+    }
+
+    pub fn fetch(&mut self, code: &[Instr]) -> Ret<()> {
+        let Address(i) = self.pc;
+
+        self.op = *code.get(i as usize)
             .ok_or(RunErr::BadFetch(self.pc))?;
 
         Ok(())
@@ -292,15 +317,15 @@ impl Stack {
         Ok(())
     }
 
-    pub fn enter(&mut self, reg: [u32; 3], env: &[Value]) -> Ret<()> {
+    pub fn enter(&mut self, ra: Address, id: u32, arg: Value, env: &[Value]) -> Ret<()> {
         if self.ts.is_some() { return Err(RunErr::StackOverflow); }
 
         let sp = self.contents.len() as u32;
 
         self.ts = Some(TrapState {
-            ra: reg[0],
-            id: reg[1],
-            hm: reg[2],
+            ra: ra,
+            id: id,
+            arg: arg,
             sp: sp,
             wb: sp,
         });
@@ -361,9 +386,9 @@ impl Stack {
             },
 
             StackFn::Not => {
-                let val = match self.pop()?.as_int()? {
-                    0 => 1,
-                    _ => 0,
+                let val = match self.pop()?.as_bool()? {
+                    true => 0,
+                    false => 1,
                 };
                 self.push(Value::Int(val))
             },
@@ -425,6 +450,15 @@ impl Streap {
 }
 
 impl Value {
+    pub fn as_bool(self) -> Ret<bool> {
+        match self {
+            Value::Int(0) => Ok(false),
+            Value::Int(_) => Ok(true),
+            // TODO: Consider truthiness of other values
+            other => Err(RunErr::WrongType(other, TypeTag::Integer)),
+        }
+    }
+
     pub fn as_int(self) -> Ret<i32> {
         match self {
             Value::Int(i) => Ok(i),

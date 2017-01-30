@@ -18,7 +18,7 @@ pub struct Program {
     pub modenvs: Vec<eval::Process>,
 }
 
-#[derive(Copy, Clone, Debug)]
+#[derive(Copy, Clone, Debug, Default)]
 pub struct Address(pub u32);
 
 #[derive(Copy, Clone, Debug)]
@@ -26,6 +26,7 @@ pub enum Instr {
     Eval(StackFn),
     Write,
     Enclose,
+    Compare(Relation),
     Trim(StackAddr),
     PushLit(Value),
     PushVar(StackAddr),
@@ -68,6 +69,13 @@ pub enum StackFn {
 }
 
 #[derive(Copy, Clone, Debug)]
+pub enum Relation {
+    Greater,
+    Lesser,
+    Equal,
+}
+
+#[derive(Copy, Clone, Debug)]
 pub enum NativeFn {
     Roll,
     GetPid,
@@ -107,7 +115,7 @@ pub mod example {
 
             for &instr in code {
                 this.op = instr;
-                this.exec().unwrap();
+                this.exec(&[]).unwrap();
             }
 
             this
@@ -146,5 +154,32 @@ pub mod example {
         Process::evaluate({&[
             Instr::Eval(StackFn::Swap),
         ]});
+    }
+
+    #[test]
+    fn jump() {
+        let mut p = Process::default();
+
+        let code = &[
+            Instr::PushLit(Value::Int(25)),
+            Instr::Write,
+            Instr::PushLit(Value::Int(2)),
+            Instr::PushLit(Value::Int(2)),
+            Instr::Eval(StackFn::Add),
+            Instr::PushVar(StackAddr(0)),
+            Instr::Compare(Relation::Lesser),
+            Instr::JumpIf(Label(0)),
+            Instr::Hcf,
+            Instr::Nop,
+        ];
+
+        let labels = &[
+            Address(9),
+        ];
+
+        for _ in code {
+            p.fetch(code).unwrap();
+            p.exec(labels).unwrap();
+        }
     }
 }
