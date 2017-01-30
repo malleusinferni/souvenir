@@ -1,4 +1,4 @@
-use ir::*;
+use vm::*;
 
 #[derive(Clone, Debug, Default)]
 pub struct Process {

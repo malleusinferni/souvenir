@@ -98,8 +98,8 @@ impl Default for Instr {
 
 #[cfg(test)]
 pub mod example {
-    use ir::*;
-    use ir::eval::Process;
+    use vm::*;
+    use vm::eval::Process;
 
     impl Process {
         fn evaluate(code: &[Instr]) -> Self {
