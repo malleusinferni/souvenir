@@ -11,8 +11,8 @@ pub struct Program {
     /// Maps `Label`s to indices into `code`.
     pub labels: Vec<Address>,
 
-    /// Table of function definitions. Indexed by `FuncID`.
-    pub funcs: Vec<FuncDef>,
+    /// Maps `Label`s to function information.
+    pub funcdefs: Vec<FuncDef>,
 
     /// Pre-evaluated environments for module-scoped variables.
     pub modenvs: Vec<eval::Process>,
@@ -32,8 +32,8 @@ pub enum Instr {
     PushVar(StackAddr),
     Jump(Label),
     JumpIf(Label),
-    Spawn(FuncID),
-    Recur(FuncID),
+    Spawn(Label),
+    Recur(Label),
     Native(NativeFn),
     SendMessage(StackAddr),
     Sleep(f32),
@@ -88,15 +88,12 @@ pub struct StackAddr(pub u32);
 pub struct Label(pub u32);
 
 #[derive(Copy, Clone, Debug)]
-pub struct FuncID(pub u32);
-
-#[derive(Copy, Clone, Debug)]
 pub struct ModuleID(pub u32);
 
 #[derive(Copy, Clone, Debug)]
 pub struct FuncDef {
     module: ModuleID,
-    block: Label,
+    argcount: u32,
 }
 
 impl Default for Instr {

@@ -60,6 +60,12 @@ pub struct TrapState {
     pub wb: u32,
 }
 
+#[derive(Debug)]
+pub enum Argvec<'a> {
+    Local(&'a [Value]),
+    Inherited(&'a Process),
+}
+
 #[derive(Copy, Clone, Debug)]
 pub struct TrapCall {
     id: u32,
@@ -153,7 +159,7 @@ impl Process {
 
                 if let Some(next) = ts.id.checked_sub(1) {
                     let &Trap { label, env } = self.traps.get(next as usize)
-                        .ok_or(RunErr::IllegalInstr(self.op))?;
+                        .ok_or(self.op.illegal())?;
 
                     self.stack.enter(TrapCall {
                         id: next,
@@ -267,17 +273,29 @@ impl Process {
         Ok(())
     }
 
-    pub fn get_fn_args(&mut self, other: &Process) -> Ret<usize> {
-        let argv = other.stack.read_working_set();
-        let argc = argv.len();
+    pub fn get_fn_args(&mut self, argv: Argvec) -> Ret<usize> {
+        match argv {
+            Argvec::Local(values) => {
+                for &value in values {
+                    self.stack.push(value)?;
+                    self.stack.write()?;
+                }
 
-        for &value in argv {
-            let local = self.local_copy(value, other)?;
-            self.stack.push(local)?;
-            self.stack.write()?;
+                Ok(values.len())
+            },
+
+            Argvec::Inherited(other) => {
+                let values = other.stack.read_working_set();
+
+                for &value in values {
+                    let value = self.local_copy(value, other)?;
+                    self.stack.push(value)?;
+                    self.stack.write()?;
+                }
+
+                Ok(values.len())
+            },
         }
-
-        Ok(argc)
     }
 
     pub fn local_copy(&mut self, v: Value, other: &Process) -> Ret<Value> {
@@ -298,6 +316,28 @@ impl Process {
 
             other => Ok(other),
         }
+    }
+
+    pub fn start(&mut self, label: Label, args: Argvec, env: Option<&Process>, jump_table: &[Address]) -> Ret<()> {
+        self.stack.reset();
+        self.heap.reset();
+        self.strings.reset();
+        self.traps.clear();
+
+        if let Some(env) = env {
+            for &value in env.stack.read_registers() {
+                let value = self.local_copy(value, env)?;
+                self.stack.push(value)?;
+                self.stack.write()?;
+            }
+        }
+
+        let _argc = self.get_fn_args(args)?;
+        // TODO: Check the arg count
+
+        self.jump(label, jump_table)?;
+
+        Ok(())
     }
 }
 
@@ -463,6 +503,12 @@ impl Stack {
             },
         }
     }
+
+    pub fn reset(&mut self) {
+        self.contents.clear();
+        self.wb = 0;
+        self.ts = None;
+    }
 }
 
 impl Heap {
@@ -490,6 +536,10 @@ impl Heap {
             Ok(&self.contents[start .. start + length])
         }
     }
+
+    pub fn reset(&mut self) {
+        self.contents.clear();
+    }
 }
 
 impl Streap {
@@ -503,6 +553,10 @@ impl Streap {
         self.contents.get(addr)
             .map(|s| s.as_ref())
             .ok_or(RunErr::SegfaultIn(AddrSpace::StringHeap))
+    }
+
+    pub fn reset(&mut self) {
+        self.contents.clear();
     }
 }
 
@@ -554,5 +608,19 @@ impl Value {
 impl Trap {
     fn disarm(&mut self) {
         unimplemented!()
+    }
+}
+
+impl Instr {
+    pub fn guard(self, cond: bool) -> Ret<()> {
+        if cond {
+            Ok(())
+        } else {
+            Err(self.illegal())
+        }
+    }
+
+    pub fn illegal(self) -> RunErr {
+        RunErr::IllegalInstr(self)
     }
 }
