@@ -1,109 +1,161 @@
-use ast;
+use ast::{self, IdentOption, ExprOption};
 use tokenizer::{Tok, TokErr};
 
 grammar<'input>(text: &'input str);
 
 pub Module: ast::Module = {
-    <s:Statement*> <k:Knot*> => ast::Module {
-        globals: s,
+    <b:Block> <k:Knot*> => ast::Module {
+        globals: b,
         knots: k,
     },
 };
 
 Knot: ast::Knot = {
-    "==" <name:FuncName> <args:ArgList?> ";" <body:Statement*> => ast::Knot {
+    "==" <name:Ident> <args:ArgList?> ";" <body:Block> => ast::Knot {
         name: name,
-        args: args.unwrap_or_else(|| vec![]),
+        args: args.unwrap_or_default(),
         body: body,
     },
+};
+
+Block: ast::Block = {
+    <Statement*> => ast::Block(<>),
 };
 
 Statement: ast::Stmt = {
-    "disarm" <Label> ";" => {
-        ast::Stmt::Disarm(<>)
-    },
-
-    "weave" <l:Label?> ";" <body:Choice*> ";;" ";" => {
-        ast::Stmt::Weave(l.unwrap_or(ast::Label::Anonymous), body)
-    },
-
-    "trap" <l:Label?> ";" <body:Trap*> ";;" ";" => {
-        ast::Stmt::Trap(l.unwrap_or(ast::Label::Anonymous), body)
-    },
-
-    "listen" ";" <body:Trap*> ";;" ";" => {
-        ast::Stmt::Listen(body)
-    },
-
-    "trace" <Expr> ";" => ast::Stmt::Trace(<>),
-
-    <LitStr> ";" => ast::Stmt::Trace(<>),
-
-    "let" <a:Assign> "=" <v:Expr> ";" => {
-        ast::Stmt::Let(a, v)
-    },
-
-    "wait" <Expr> ";" => ast::Stmt::Wait(<>),
-
-    <d:VarName> <m:Expr> ";" => {
-        ast::Stmt::SendMsg(ast::Expr::Var(d), m)
-    },
-
-    <Expr> "<-" <Expr> ";" => ast::Stmt::SendMsg(<>),
-
-    "->" <FnCall> ";" => ast::Stmt::Recur(<>),
-
-    "spawn" <FnCall> ";" => {
-        ast::Stmt::LetSpawn(ast::Assign::Hole, <>)
-    },
-
-    "let" <a:Assign> "=" "spawn" <f:FnCall> ";" => {
-        ast::Stmt::LetSpawn(a, f)
-    },
-
     ";" => ast::Stmt::Empty,
+
+    "disarm" <Ident> ";" => {
+        ast::Stmt::Disarm {
+            target: <>,
+        }
+    },
+
+    "weave" <name:Ident?> ";" <arms:WeaveArm*> ";;" ";" => {
+        ast::Stmt::Weave {
+            name: name.or_label(),
+            arms: arms,
+        }
+    },
+
+    "trap" <name:Ident?> ";" <arms:TrapArm*> ";;" ";" => {
+        ast::Stmt::Trap {
+            name: name.or_label(),
+            arms: arms,
+        }
+    },
+
+    "listen" <name:Ident?> ";" <arms:TrapArm*> ";;" ";" => {
+        ast::Stmt::Listen {
+            name: name.or_label(),
+            arms: arms,
+        }
+    },
+
+    "trace" <Expr> ";" => {
+        ast::Stmt::Trace {
+            value: <>,
+        }
+    },
+
+    "let" <name:Ident> "=" <value:Expr> ";" => {
+        ast::Stmt::Let {
+            name: name,
+            value: value,
+        }
+    },
+
+    "wait" <Expr> ";" => {
+        ast::Stmt::Wait {
+            value: <>,
+        }
+    },
+
+    <Str> ";" => {
+        ast::Stmt::Naked {
+            target: None,
+            message: <>,
+        }
+    },
+
+    <name:Ident> <message:Str> ";" => {
+        ast::Stmt::Naked {
+            target: Some(name),
+            message: message,
+        }
+    },
+
+    <target:Ident> "<-" <message:Comma<Expr>> ";" => {
+        ast::Stmt::SendMsg {
+            target: target,
+            message: ast::Expr::List(message),
+        }
+    },
+
+    "->" <FnCall> ";" => {
+        ast::Stmt::Recur {
+            target: <>,
+        }
+    },
+
+    <name:("let" <Ident> "=")?> "spawn" <target:FnCall> ";" => {
+        ast::Stmt::Let {
+            name: name.or_hole(),
+            value: ast::Expr::Spawn(target),
+        }
+    },
 };
 
-Choice: ast::Choice = {
-    "|" <g:ChoiceGuard> <s:LitStr> ";" <body:Statement*> => ast::Choice {
-        guard: g,
-        title: s,
-        body: body,
+WeaveArm: ast::WeaveArm = {
+    "|" <guard:WeaveGuard> <message:Str> ";" <body:Block> => {
+        ast::WeaveArm {
+            guard: guard,
+            message: ast::Expr::Str(message),
+            body: body,
+        }
     },
 
-    "|" "_" ";" <body:Statement*> => ast::Choice {
-        guard: ast::Expr::LastResort,
-        title: ast::Expr::Str(String::new()),
-        body: body,
-    }
+    "|" "_" ";" <body:Block> => {
+        ast::WeaveArm {
+            guard: ast::Expr::Id(ast::Ident::Hole),
+            message: ast::Expr::Str(ast::Str::Plain("".to_owned())),
+            body: body,
+        }
+    },
 
     // TODO: Handle more complicated choice formats
 };
 
 #[inline]
-ChoiceGuard: ast::Expr = {
-    <g:("if" <Expr> "then")?> => g.unwrap_or_else(|| ast::Expr::from(true))
+WeaveGuard: ast::Expr = {
+    <guard:("if" <Expr> "then")?> => {
+        guard.or_true()
+    }
 };
 
-Trap: ast::Trap = {
-    "|" <p:Pat> <o:TrapSrc> <g:TrapGuard> ";" <body:Statement*> => ast::Trap {
-        pattern: p,
-        guard: g,
-        origin: o,
-        body: body,
+TrapArm: ast::TrapArm = {
+    "|" <p:Pat> <o:TrapSender> <g:TrapGuard> ";" <body:Block> => {
+        ast::TrapArm {
+            pattern: p,
+            origin: o,
+            guard: g,
+            body: body,
+        }
     },
 };
 
 #[inline]
-TrapSrc: ast::Pat = {
-    <o:("from" <Assign>)?> => {
-        ast::Pat::Assign(o.unwrap_or_else(|| ast::Assign::Hole))
+TrapSender: ast::Pat = {
+    <sender:("from" <Ident>)?> => {
+        ast::Pat::Id(sender.or_hole())
     }
 };
 
 #[inline]
 TrapGuard: ast::Expr = {
-    <g:("when" <Expr>)?> => g.unwrap_or_else(|| ast::Expr::from(true))
+    <guard:("when" <Expr>)?> => {
+        guard.or_true()
+    }
 };
 
 Comma<T>: Vec<T> = {
@@ -114,58 +166,58 @@ Comma<T>: Vec<T> = {
     },
 };
 
-ArgList: Vec<ast::Var> = {
-    "(" <Comma<VarName>> ")" => <>,
-    "(" ")" => vec![],
+ArgList: Vec<ast::Ident> = {
+    "(" <args:(Comma<Ident>)?> ")" => args.unwrap_or_default(),
 };
 
 FnCall: ast::FnCall = {
-    <f:FuncName> "(" <a:Comma<Expr>?> ")" => {
-        ast::FnCall(f, a.unwrap_or_else(|| vec![]))
+    <name:Ident> <args:("(" <(Comma<Expr>)?> ")")?> => {
+        ast::FnCall(name, args.unwrap_or(None).unwrap_or(vec![]))
     },
-
-    <f:FuncName> => ast::FnCall(f, vec![]),
 };
 
-Label: ast::Label = {
-    <s:"NmLabel"> => ast::Label::Local({
-        s.chars().skip(1).collect::<String>()
-    })
-};
-
-FuncName: ast::Label = {
-    <p:(<"NmFunc"> ":")*> <s:"NmFunc"> => {
-        let name = s.to_string();
-        if p.is_empty() {
-            ast::Label::Local(name)
-        } else {
-            let path = p.into_iter().map(|s| s.to_string()).collect();
-            ast::Label::Qualified(ast::Modpath(path), name)
+Ident: ast::Ident = {
+    <path:Modpath?> <name:"NmFunc"> => {
+        ast::Ident::Func {
+            name: name.to_string(),
+            in_module: path,
         }
     },
-};
 
-VarName: ast::Var = {
-    <s:"NmVar"> => match s {
-        "Self" => ast::Var::PidOfSelf,
-        s => ast::Var::Name(s.to_string()),
+    <name:"NmLabel"> => ast::Ident::Label {
+        name: name.chars().skip(1).collect::<String>()
     },
+
+    <name:"NmVar"> => match name {
+        "Self" => ast::Ident::PidOfSelf,
+
+        name => ast::Ident::Var {
+            name: name.to_string()
+        },
+    },
+
+    "_" => ast::Ident::Hole,
 };
 
-Assign: ast::Assign = {
-    "_" => ast::Assign::Hole,
-
-    <VarName> => ast::Assign::Var(<>),
+#[inline]
+Modpath: ast::Modpath = {
+    <segments:(<"NmFunc"> ":")+> => {
+        ast::Modpath({
+            segments.into_iter()
+                .map(|s| s.to_owned())
+                .collect()
+        })
+    },
 };
 
 Pat: ast::Pat = {
-    <Assign> => ast::Pat::Assign(<>),
+    <Ident> => ast::Pat::Id(<>),
 
-    "[" "]" => ast::Pat::List(vec![]),
+    <Literal> => ast::Pat::Lit(<>),
 
-    "[" <Comma<Pat>> "]" => ast::Pat::List(<>),
-
-    <Literal> => ast::Pat::Literal(<>),
+    "[" <contents:(Comma<Pat>)?> "]" => {
+        ast::Pat::List(contents.unwrap_or(vec![]))
+    },
 };
 
 Expr: ast::Expr = {
@@ -175,15 +227,13 @@ Expr: ast::Expr = {
 
 Binop<O, L, R>: ast::Expr = {
     <lhs:L> <op:O> <rhs:R> => {
-        let lhs = Box::new(lhs);
-        let rhs = Box::new(rhs);
-        ast::Expr::Binop(lhs, op, rhs)
+        ast::Expr::Op(op, vec![lhs, rhs])
     },
 };
 
-Op2: ast::Binop = {
-    "+" => ast::Binop::Add,
-    "-" => ast::Binop::Sub,
+Op2: ast::Op = {
+    "+" => ast::Op::Add,
+    "-" => ast::Op::Sub,
 };
 
 Expr2: ast::Expr = {
@@ -191,9 +241,9 @@ Expr2: ast::Expr = {
     <e:Expr1> => e,
 };
 
-Op1: ast::Binop = {
-    "/" => ast::Binop::Div,
-    "*" => ast::Binop::Mul,
+Op1: ast::Op = {
+    "/" => ast::Op::Div,
+    "*" => ast::Op::Mul,
 };
 
 Expr1: ast::Expr = {
@@ -202,9 +252,17 @@ Expr1: ast::Expr = {
 };
 
 Expr0: ast::Expr = {
-    <VarName> => ast::Expr::Var(<>),
-    <Literal> => ast::Expr::Literal(<>),
+    <Ident> => ast::Expr::Id(<>),
+
+    <Literal> => ast::Expr::Lit(<>),
+
+    // TODO: String
+
     "(" <e:Expr> ")" => e,
+
+    "[" <elems:(Comma<Expr>)?> "]" => {
+        ast::Expr::List(elems.unwrap_or(vec![]))
+    },
 };
 
 Literal: ast::Lit = {
@@ -217,10 +275,12 @@ Literal: ast::Lit = {
     }),
 };
 
-LitStr: ast::Expr = {
-    <s:"LitStr"> => ast::Expr::Str({
+Str: ast::Str = {
+    <s:"LitStr"> => ast::Str::Plain({
         s.chars().skip(2).collect::<String>()
-    })
+    }),
+
+    // TODO: Markup and interpolation
 };
 
 extern {

@@ -1,131 +1,159 @@
-pub mod rewrite;
+pub mod visit;
 
 #[derive(Clone, Debug, PartialEq)]
 pub struct Module {
-    pub globals: Vec<Stmt>,
+    pub globals: Block,
     pub knots: Vec<Knot>,
 }
 
 #[derive(Clone, Debug, PartialEq)]
+pub struct Block(pub Vec<Stmt>);
+
+#[derive(Clone, Debug, PartialEq)]
 pub struct Knot {
-    pub name: Label,
-    pub args: Vec<Var>,
-    pub body: Vec<Stmt>,
+    pub name: Ident,
+    pub args: Vec<Ident>,
+    pub body: Block,
 }
 
 #[derive(Clone, Debug, PartialEq)]
-pub struct Choice {
+pub struct WeaveArm {
     pub guard: Expr,
-    pub title: Expr,
-    pub body: Vec<Stmt>,
+    pub message: Expr,
+    pub body: Block,
 }
 
 #[derive(Clone, Debug, PartialEq)]
-pub struct Trap {
+pub struct TrapArm {
     pub pattern: Pat,
-    pub guard: Expr,
     pub origin: Pat,
-    pub body: Vec<Stmt>,
+    pub guard: Expr,
+    pub body: Block,
 }
 
 #[derive(Clone, Debug, PartialEq)]
 pub enum Stmt {
     Empty,
-    Disarm(Label),
-    Let(Assign, Expr),
-    Listen(Vec<Trap>),
-    SendMsg(Expr, Expr),
-    LetSpawn(Assign, FnCall),
-    Recur(FnCall),
-    Trace(Expr),
-    Trap(Label, Vec<Trap>),
-    Wait(Expr),
-    Weave(Label, Vec<Choice>),
-}
 
-#[derive(Clone, Debug, PartialEq)]
-pub enum Label {
-    Qualified(Modpath, String),
-    Local(String),
-    Anonymous,
+    Disarm {
+        target: Ident,
+    },
+
+    Let {
+        value: Expr,
+        name: Ident,
+    },
+
+    Listen {
+        name: Ident,
+        arms: Vec<TrapArm>,
+    },
+
+    Naked {
+        message: Str,
+        target: Option<Ident>,
+    },
+
+    Recur {
+        target: FnCall,
+    },
+
+    SendMsg {
+        message: Expr,
+        target: Ident,
+    },
+
+    Trace {
+        value: Expr,
+    },
+
+    Trap {
+        name: Ident,
+        arms: Vec<TrapArm>,
+    },
+
+    Wait {
+        value: Expr,
+    },
+
+    Weave {
+        name: Ident,
+        arms: Vec<WeaveArm>,
+    },
 }
 
 #[derive(Clone, Debug, Eq, Hash, PartialEq)]
 pub struct Modpath(pub Vec<String>);
 
 #[derive(Clone, Debug, PartialEq)]
-pub struct FnCall(pub Label, pub Vec<Expr>);
+pub struct FnCall(pub Ident, pub Vec<Expr>);
 
 #[derive(Clone, Debug, PartialEq)]
-pub enum Assign {
-    Hole,
-    Var(Var),
-}
+pub enum Ident {
+    Func {
+        name: String,
+        in_module: Option<Modpath>,
+    },
 
-#[derive(Clone, Debug, PartialEq)]
-pub enum Var {
-    Name(String),
-    Register(u32),
+    Label {
+        name: String,
+    },
+
+    AnonymousLabel,
+
     PidOfSelf,
-}
 
-#[derive(Clone, Debug, PartialEq)]
-pub enum Pat {
-    Assign(Assign),
-    List(Vec<Pat>),
-    Literal(Lit),
-    Match(Var),
+    Var {
+        name: String,
+    },
+
+    Hole,
+
+    Invalid(String),
 }
 
 #[derive(Clone, Debug, PartialEq)]
 pub enum Expr {
-    Literal(Lit),
-    Count(Label),
-    Str(String),
-    Var(Var),
-    Not(Box<Expr>),
+    Id(Ident),
+    Lit(Lit),
+    Str(Str),
+    Op(Op, Vec<Expr>),
     List(Vec<Expr>),
-    Binop(Box<Expr>, Binop, Box<Expr>),
-    LastResort,
+    Spawn(FnCall),
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub enum Pat {
+    Id(Ident),
+    Lit(Lit),
+    List(Vec<Pat>),
 }
 
 #[derive(Clone, Debug, PartialEq)]
 pub enum Lit {
     Atom(String),
     Int(i32),
+    InvalidInt(String),
 }
 
 #[derive(Clone, Debug, PartialEq)]
-pub enum Binop {
-    Roll,
+pub enum Str {
+    Plain(String),
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub enum Op {
     Add,
     Sub,
     Div,
     Mul,
     Eql,
-}
-
-impl<'a> From<Option<&'a str>> for Label {
-    fn from(input: Option<&'a str>) -> Self {
-        match input {
-            None => Label::Anonymous,
-            Some(s) => Label::Local(s.to_owned()),
-        }
-    }
-}
-
-impl From<bool> for Expr {
-    fn from(b: bool) -> Self {
-        Expr::Literal({
-            if b { Lit::Int(1) } else { Lit::Int(0) }
-        })
-    }
-}
-
-impl<'a> From<&'a str> for Expr {
-    fn from(s: &'a str) -> Self {
-        Expr::Str(s.to_owned())
-    }
+    Gt,
+    Lt,
+    Gte,
+    Lte,
+    Not,
+    Roll,
 }
 
 use lalrpop_util::ParseError;
@@ -142,61 +170,32 @@ impl Module {
     }
 }
 
-#[cfg(test)]
-pub static EXAMPLE_SRC: &'static str = r#"== knot_name
-weave 'foo
-| > Option 1
-    -> dest1 -- Comment allowed here and ignored
-| > Option 2 -- Comment included in string
-    -> dest2
-| _
-    -> dest_default
-;;
-"#;
+pub trait IdentOption {
+    fn or_hole(self) -> Ident;
+    fn or_label(self) -> Ident;
+}
 
-#[test]
-fn ast_structure() {
-    let parsed = Module::parse(EXAMPLE_SRC).unwrap();
+impl IdentOption for Option<Ident> {
+    fn or_hole(self) -> Ident {
+        self.unwrap_or(Ident::Hole)
+    }
 
-    let weave_arms = vec![
-        Choice {
-            guard: Expr::Literal(Lit::Int(1)),
-            title: "Option 1".into(),
-            body: vec![
-                Stmt::Recur(FnCall(Some("dest1").into(), vec![])),
-            ],
-        },
+    fn or_label(self) -> Ident {
+        self.unwrap_or(Ident::AnonymousLabel)
+    }
+}
 
-        Choice {
-            guard: Expr::Literal(Lit::Int(1)),
-            title: "Option 2 -- Comment included in string".into(),
-            body: vec![
-                Stmt::Recur(FnCall(Some("dest2").into(), vec![])),
-            ],
-        },
+pub trait ExprOption {
+    fn or_true(self) -> Expr;
+    fn or_false(self) -> Expr;
+}
 
-        Choice {
-            guard: Expr::LastResort,
-            title: "".into(),
-            body: vec![
-                Stmt::Recur(FnCall(Some("dest_default").into(), vec![])),
-            ],
-        },
-    ];
+impl ExprOption for Option<Expr> {
+    fn or_true(self) -> Expr {
+        self.unwrap_or(Expr::Lit(Lit::Int(1)))
+    }
 
-    let expected = Module {
-        globals: vec![],
-        knots: vec![Knot {
-            name: Some("knot_name").into(),
-            args: vec![],
-            body: vec![
-                Stmt::Weave(Some("foo").into(), weave_arms),
-            ],
-        }],
-    };
-
-    if expected == parsed { return; }
-
-    // Pretty print AST so we can compare the output
-    panic!("Expected: {:#?}\n\nGot: {:#?}", expected, parsed);
+    fn or_false(self) -> Expr {
+        self.unwrap_or(Expr::Lit(Lit::Int(0)))
+    }
 }

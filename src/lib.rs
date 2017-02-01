@@ -6,7 +6,7 @@ pub mod parser;
 pub mod tokenizer;
 
 pub mod driver;
-pub mod pass;
+//pub mod pass;
 pub mod vm;
 
 #[test]
