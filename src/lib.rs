@@ -5,9 +5,12 @@ pub mod ast;
 pub mod parser;
 pub mod tokenizer;
 
-pub mod driver;
+pub mod ir;
 //pub mod pass;
+
 pub mod vm;
+
+pub mod driver;
 
 #[test]
 fn parse_examples() {
