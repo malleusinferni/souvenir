@@ -1,6 +1,11 @@
 pub mod visit;
 
 #[derive(Clone, Debug, PartialEq)]
+pub struct Program {
+    pub modules: Vec<(Modpath, Module)>,
+}
+
+#[derive(Clone, Debug, PartialEq)]
 pub struct Module {
     pub globals: Block,
     pub knots: Vec<Knot>,

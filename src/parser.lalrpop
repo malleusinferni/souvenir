@@ -12,8 +12,11 @@ pub Module: ast::Module = {
 };
 
 Knot: ast::Knot = {
-    "==" <name:FnName> <args:ArgList?> ";" <body:Block> => ast::Knot {
-        name: name,
+    "==" <name:"NmFunc"> <args:ArgList?> ";" <body:Block> => ast::Knot {
+        name: ast::FnName {
+            name: name.to_string(),
+            in_module: None,
+        },
         args: args.unwrap_or_default(),
         body: body,
     },

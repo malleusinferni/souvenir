@@ -1,24 +1,26 @@
-#[derive(Clone, Debug, PartialEq)]
+pub mod from_ast;
+
+#[derive(Clone, Debug, Default, PartialEq)]
 pub struct Program {
-    preludes: Vec<Scope>,
-    knots: Vec<KnotDef>,
+    pub preludes: Vec<Scope>,
+    pub knots: Vec<KnotDef>,
 }
 
 #[derive(Clone, Debug, PartialEq)]
 pub struct KnotDef {
-    args_wanted: u32,
-    body: Scope,
+    pub args_wanted: u32,
+    pub body: Scope,
 }
 
 #[derive(Clone, Debug, PartialEq)]
 pub struct MatchArm {
-    pattern: Pat,
-    body: Scope,
+    pub pattern: Pat,
+    pub body: Scope,
 }
 
 #[derive(Clone, Debug, PartialEq)]
 pub struct Scope {
-    body: Vec<Stmt>,
+    pub body: Vec<Stmt>,
 }
 
 #[derive(Clone, Debug, PartialEq)]
