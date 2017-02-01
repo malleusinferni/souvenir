@@ -1,4 +1,5 @@
-use ast::{self, IdentOption, ExprOption};
+use ast;
+
 use tokenizer::{Tok, TokErr};
 
 grammar<'input>(text: &'input str);
@@ -11,7 +12,7 @@ pub Module: ast::Module = {
 };
 
 Knot: ast::Knot = {
-    "==" <name:Ident> <args:ArgList?> ";" <body:Block> => ast::Knot {
+    "==" <name:FnName> <args:ArgList?> ";" <body:Block> => ast::Knot {
         name: name,
         args: args.unwrap_or_default(),
         body: body,
@@ -25,29 +26,29 @@ Block: ast::Block = {
 Statement: ast::Stmt = {
     ";" => ast::Stmt::Empty,
 
-    "disarm" <Ident> ";" => {
+    "disarm" <Label> ";" => {
         ast::Stmt::Disarm {
             target: <>,
         }
     },
 
-    "weave" <name:Ident?> ";" <arms:WeaveArm*> ";;" ";" => {
+    "weave" <name:Label?> ";" <arms:WeaveArm*> ";;" ";" => {
         ast::Stmt::Weave {
-            name: name.or_label(),
+            name: name.unwrap_or_default(),
             arms: arms,
         }
     },
 
-    "trap" <name:Ident?> ";" <arms:TrapArm*> ";;" ";" => {
+    "trap" <name:Label?> ";" <arms:TrapArm*> ";;" ";" => {
         ast::Stmt::Trap {
-            name: name.or_label(),
+            name: name.unwrap_or_default(),
             arms: arms,
         }
     },
 
-    "listen" <name:Ident?> ";" <arms:TrapArm*> ";;" ";" => {
+    "listen" <name:Label?> ";" <arms:TrapArm*> ";;" ";" => {
         ast::Stmt::Listen {
-            name: name.or_label(),
+            name: name.unwrap_or_default(),
             arms: arms,
         }
     },
@@ -100,7 +101,7 @@ Statement: ast::Stmt = {
 
     <name:("let" <Ident> "=")?> "spawn" <target:FnCall> ";" => {
         ast::Stmt::Let {
-            name: name.or_hole(),
+            name: name.unwrap_or_default(),
             value: ast::Expr::Spawn(target),
         }
     },
@@ -129,7 +130,7 @@ WeaveArm: ast::WeaveArm = {
 #[inline]
 WeaveGuard: ast::Expr = {
     <guard:("if" <Expr> "then")?> => {
-        guard.or_true()
+        guard.unwrap_or(true.into())
     }
 };
 
@@ -147,14 +148,14 @@ TrapArm: ast::TrapArm = {
 #[inline]
 TrapSender: ast::Pat = {
     <sender:("from" <Ident>)?> => {
-        ast::Pat::Id(sender.or_hole())
+        ast::Pat::Id(sender.unwrap_or_default())
     }
 };
 
 #[inline]
 TrapGuard: ast::Expr = {
     <guard:("when" <Expr>)?> => {
-        guard.or_true()
+        guard.unwrap_or(true.into())
     }
 };
 
@@ -171,23 +172,27 @@ ArgList: Vec<ast::Ident> = {
 };
 
 FnCall: ast::FnCall = {
-    <name:Ident> <args:("(" <(Comma<Expr>)?> ")")?> => {
+    <name:FnName> <args:("(" <(Comma<Expr>)?> ")")?> => {
         ast::FnCall(name, args.unwrap_or(None).unwrap_or(vec![]))
     },
 };
 
-Ident: ast::Ident = {
+FnName: ast::FnName = {
     <path:Modpath?> <name:"NmFunc"> => {
-        ast::Ident::Func {
+        ast::FnName {
             name: name.to_string(),
             in_module: path,
         }
     },
+};
 
-    <name:"NmLabel"> => ast::Ident::Label {
+Label: ast::Label = {
+    <name:"NmLabel"> => ast::Label::Local {
         name: name.chars().skip(1).collect::<String>()
     },
+};
 
+Ident: ast::Ident = {
     <name:"NmVar"> => match name {
         "Self" => ast::Ident::PidOfSelf,
 

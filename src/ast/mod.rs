@@ -11,7 +11,7 @@ pub struct Block(pub Vec<Stmt>);
 
 #[derive(Clone, Debug, PartialEq)]
 pub struct Knot {
-    pub name: Ident,
+    pub name: FnName,
     pub args: Vec<Ident>,
     pub body: Block,
 }
@@ -36,7 +36,7 @@ pub enum Stmt {
     Empty,
 
     Disarm {
-        target: Ident,
+        target: Label,
     },
 
     Let {
@@ -45,7 +45,7 @@ pub enum Stmt {
     },
 
     Listen {
-        name: Ident,
+        name: Label,
         arms: Vec<TrapArm>,
     },
 
@@ -68,7 +68,7 @@ pub enum Stmt {
     },
 
     Trap {
-        name: Ident,
+        name: Label,
         arms: Vec<TrapArm>,
     },
 
@@ -77,7 +77,7 @@ pub enum Stmt {
     },
 
     Weave {
-        name: Ident,
+        name: Label,
         arms: Vec<WeaveArm>,
     },
 }
@@ -86,30 +86,32 @@ pub enum Stmt {
 pub struct Modpath(pub Vec<String>);
 
 #[derive(Clone, Debug, PartialEq)]
-pub struct FnCall(pub Ident, pub Vec<Expr>);
+pub struct FnCall(pub FnName, pub Vec<Expr>);
+
+#[derive(Clone, Debug, PartialEq)]
+pub struct FnName {
+    pub name: String,
+    pub in_module: Option<Modpath>,
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub enum Label {
+    Local {
+        name: String,
+    },
+
+    Anonymous,
+}
 
 #[derive(Clone, Debug, PartialEq)]
 pub enum Ident {
-    Func {
-        name: String,
-        in_module: Option<Modpath>,
-    },
-
-    Label {
-        name: String,
-    },
-
-    AnonymousLabel,
-
-    PidOfSelf,
-
     Var {
         name: String,
     },
 
     Hole,
 
-    Invalid(String),
+    PidOfSelf,
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -170,32 +172,23 @@ impl Module {
     }
 }
 
-pub trait IdentOption {
-    fn or_hole(self) -> Ident;
-    fn or_label(self) -> Ident;
-}
-
-impl IdentOption for Option<Ident> {
-    fn or_hole(self) -> Ident {
-        self.unwrap_or(Ident::Hole)
-    }
-
-    fn or_label(self) -> Ident {
-        self.unwrap_or(Ident::AnonymousLabel)
+impl Default for Ident {
+    fn default() -> Self {
+        Ident::Hole
     }
 }
 
-pub trait ExprOption {
-    fn or_true(self) -> Expr;
-    fn or_false(self) -> Expr;
+impl Default for Label {
+    fn default() -> Self {
+        Label::Anonymous
+    }
 }
 
-impl ExprOption for Option<Expr> {
-    fn or_true(self) -> Expr {
-        self.unwrap_or(Expr::Lit(Lit::Int(1)))
-    }
-
-    fn or_false(self) -> Expr {
-        self.unwrap_or(Expr::Lit(Lit::Int(0)))
+impl From<bool> for Expr {
+    fn from(cond: bool) -> Self {
+        match cond {
+            true => Expr::Lit(Lit::Int(1)),
+            false => Expr::Lit(Lit::Int(0)),
+        }
     }
 }

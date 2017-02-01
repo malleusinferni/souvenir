@@ -7,7 +7,7 @@ pub trait Visitor<Error=String> {
     }
 
     fn visit_knot(&mut self, t: &Knot) -> Result<(), Error> {
-        self.visit_label(&t.name)?;
+        self.visit_fnname(&t.name)?;
         each(&t.args, |t| self.visit_ident(t))?;
         self.visit_block(&t.body)
     }
@@ -26,8 +26,8 @@ pub trait Visitor<Error=String> {
     }
 
     fn visit_fncall(&mut self, t: &FnCall) -> Result<(), Error> {
-        let &FnCall(ref label, ref args) = t;
-        self.visit_label(label)?;
+        let &FnCall(ref name, ref args) = t;
+        self.visit_fnname(name)?;
         each(args, |t| self.visit_expr(t))
     }
 
@@ -159,7 +159,11 @@ pub trait Visitor<Error=String> {
         Ok(())
     }
 
-    fn visit_label(&mut self, _t: &Ident) -> Result<(), Error> {
+    fn visit_label(&mut self, _t: &Label) -> Result<(), Error> {
+        Ok(())
+    }
+
+    fn visit_fnname(&mut self, _t: &FnName) -> Result<(), Error> {
         Ok(())
     }
 
