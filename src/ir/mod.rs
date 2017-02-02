@@ -88,6 +88,7 @@ pub enum Expr {
     Strlit(String),
     PidOfSelf,
     PidZero,
+    Infinity,
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -111,7 +112,7 @@ pub enum Atom {
 #[derive(Clone, Debug, PartialEq)]
 pub struct FnCall(pub FnId, pub Vec<Expr>);
 
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Copy, Clone, Debug, PartialEq)]
 pub struct Label(pub u32);
 
 #[derive(Copy, Clone, Debug, PartialEq)]
@@ -162,6 +163,7 @@ impl Display for Expr {
             &Expr::Strlit(ref s) => write!(f, "> {}", s),
             &Expr::PidOfSelf => write!(f, "Self"),
             &Expr::PidZero => write!(f, "%stdio"),
+            &Expr::Infinity => write!(f, "forever"),
         }
     }
 }
