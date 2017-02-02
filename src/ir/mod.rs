@@ -131,14 +131,36 @@ use std::fmt::{Display, Error, Formatter, Write};
 
 impl Display for Atom {
     fn fmt(&self, f: &mut Formatter) -> Result<(), Error> {
-        write!(f, "#{}", match self {
+        write!(f, "#{}", self.name())
+    }
+}
+
+impl Atom {
+    pub fn name(&self) -> &str {
+        match self {
             &Atom::User(ref s) => s.as_ref(),
             &Atom::MenuItem => "[menu item]",
             &Atom::MenuEnd => "[show menu]",
             &Atom::LastResort => "[last resort]",
             &Atom::PrintLine => "[print line]",
             &Atom::PrintFinished => "[print finished]",
-        })
+        }
+    }
+
+    pub fn from_valid_name(name: String) -> Self {
+        let builtins = vec![
+            Atom::MenuItem,
+            Atom::MenuEnd,
+            Atom::LastResort,
+            Atom::PrintLine,
+            Atom::PrintFinished,
+        ];
+
+        for a in builtins.into_iter() {
+            if &name == a.name() { return a; }
+        }
+
+        Atom::User(name)
     }
 }
 

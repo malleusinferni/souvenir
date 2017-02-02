@@ -5,7 +5,9 @@ use ir;
 
 impl ast::Program {
     pub fn lower(self) -> Result<ir::Program, Vec<Error>> {
-        let mut tr = Translator {
+        //let fn_ids = ast::
+
+        let tr = Translator {
             program: ir::Program::default(),
             labels: HashMap::new(),
             gen_label: Counter(0, ir::Label),
@@ -389,14 +391,7 @@ impl Translator {
             // operations produce larger output than input.
             if let Some(&&ast::Stmt::Naked { .. }) = iter.peek() {
                 scope.body.push(self.reflow(&mut iter)?);
-
-                // FIXME: Generate the following code:
-                //
-                //     listen
-                //     | #[print finished]
-                //     ;;
-                //
-                // This is surprisingly nontrivial.
+                scope.body.push(self.gen_wait_after_write()?);
             } else {
                 for stmt in self.tr_stmt(iter.next().unwrap())? {
                     scope.body.push(stmt);
@@ -407,6 +402,29 @@ impl Translator {
         self.leave()?;
 
         Ok(scope)
+    }
+
+    /// Generates the following code:
+    ///
+    /// ```souvenir
+    /// listen
+    /// | #[print finished]
+    /// ;;
+    /// ```
+    fn gen_wait_after_write(&mut self) -> Try<ir::Stmt> {
+        self.gen_listen(vec!{
+            ir::MatchArm {
+                pattern: ir::Pat::List(vec!{
+                    unimplemented!(),
+                }),
+                body: unimplemented!(),
+            }
+        })
+    }
+
+    fn gen_listen(&mut self, arms: Vec<ir::MatchArm>) -> Try<ir::Stmt> {
+        let label = self.def_label(&ast::Label::Anonymous)?;
+        unimplemented!()
     }
 
     fn reflow(&mut self, iter: &mut Peek<ast::Stmt>) -> Try<ir::Stmt> {
@@ -457,6 +475,9 @@ impl Translator {
     }
 
     fn tr_stmt(&mut self, t: &ast::Stmt) -> Try<Vec<ir::Stmt>> {
+        static LAMBDA_MSG_ARG: &'static str = "~MESSAGE~";
+        static LAMBDA_SENDER_ARG: &'static str = "~SENDER~";
+
         let t = match t {
             &ast::Stmt::Empty => vec![],
 
@@ -495,7 +516,11 @@ impl Translator {
             },
 
             &ast::Stmt::SendMsg { ref message, ref target } => {
-                unimplemented!()
+                let target = ast::Expr::Id(target.clone());
+                vec![ir::Stmt::SendMsg {
+                    target: self.tr_expr(&target)?,
+                    message: self.tr_expr(message)?,
+                }]
             },
 
             &ast::Stmt::Trace { ref value } => {
@@ -510,10 +535,90 @@ impl Translator {
                 }]
             },
 
-            _ => unimplemented!(),
+            &ast::Stmt::Weave { ref name, ref arms } => {
+                let mut stmts = Vec::with_capacity(arms.len());
+                let mut trap_arms = Vec::with_capacity(arms.len());
+
+                for (i, arm) in arms.iter().enumerate() {
+                    let last_resort = match &arm.guard {
+                        &ast::Expr::Id(ast::Ident::Hole) => true,
+                        _ => false,
+                    };
+
+                    // Step 1: Write the guard clauses that populate the menu
+
+                    let guard_action = ir::Stmt::SendMsg {
+                        target: ir::Expr::PidZero,
+                        message: ir::Expr::List(vec!{
+                            ir::Expr::Atom(ir::Atom::MenuItem),
+
+                            if last_resort {
+                                ir::Expr::Atom(ir::Atom::LastResort)
+                            } else {
+                                ir::Expr::Int(i as i32)
+                            },
+                        }),
+                    };
+
+                    stmts.push(ir::Stmt::If {
+                        test: self.tr_expr(&arm.guard)?,
+                        success: vec![guard_action].into(),
+                        failure: vec![].into(),
+                    });
+
+                    // Step 2: Desugar an ast::WeaveArm into an ast::TrapArm
+                    // so we can translate the resulting trap statement
+
+                    let pat = ast::Pat::List(vec!{
+                        ast::Pat::Lit(ir::Atom::MenuItem.into()),
+                        ast::Pat::Lit(if last_resort {
+                            ir::Atom::LastResort.into()
+                        } else {
+                            ast::Lit::Int(i as i32)
+                        }),
+                    });
+
+                    // Can't really express PidZero here at the moment
+                    let sender = ast::Pat::Id(ast::Ident::Hole);
+
+                    trap_arms.push(ast::TrapArm {
+                        pattern: pat,
+                        origin: sender,
+                        guard: true.into(),
+                        body: arm.body.clone(),
+                    });
+                }
+
+                stmts.push(ir::Stmt::SendMsg {
+                    target: ir::Expr::PidZero,
+                    message: ir::Expr::List(vec!{
+                        ir::Expr::Atom(ir::Atom::MenuEnd),
+                    }),
+                });
+
+                // Wait a second. Why are we sending the message before the
+                // trap is installed? It probably won't receive a response so
+                // quickly that we lose the message, but even so, this is a
+                // race condition. FIXME.
+
+                stmts.extend(self.tr_stmt(&ast::Stmt::Listen {
+                    name: ast::Label::Anonymous,
+                    arms: trap_arms,
+                })?);
+
+                stmts
+            },
+
+            &ast::Stmt::Trap { ref name, ref arms } => {
+                vec![self.tr_trap(name, arms)?]
+            },
         };
 
         Ok(t)
+    }
+
+    fn tr_trap(&mut self, n: &ast::Label, t: &Vec<ast::TrapArm>) -> Try<ir::Stmt> {
+        unimplemented!()
     }
 
     fn tr_expr(&mut self, t: &ast::Expr) -> Try<ir::Expr> {
@@ -654,5 +759,14 @@ impl<T> Counter<T> {
         let i = self.0;
         self.0 += 1;
         (self.1)(i)
+    }
+}
+
+impl From<ir::Atom> for ast::Lit {
+    fn from(a: ir::Atom) -> Self {
+        match a {
+            ir::Atom::User(a) => ast::Lit::Atom(a),
+            other => ast::Lit::Atom(other.name().to_owned()),
+        }
     }
 }
