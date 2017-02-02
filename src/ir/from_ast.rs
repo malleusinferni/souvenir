@@ -255,7 +255,7 @@ impl Translator {
     fn qualify_label(&mut self, name: &str) -> Try<QualifiedLabel> {
         let ice = Error::Internal(format!("No context for error"));
         match (&self.context).as_ref().ok_or(ice)? {
-            &ErrorContext::Global(ref mp) => {
+            &ErrorContext::Global(_) => {
                 Err(Error::LabelNotLocal(ast::Label::Local {
                     name: name.to_owned()
                 }))
@@ -265,6 +265,10 @@ impl Translator {
                 Ok(QualifiedLabel(modpath.clone(), func.clone(), name.to_owned()))
             },
         }
+    }
+
+    fn ref_fnid(&mut self, t: &ast::FnName) -> Try<ir::FnId> {
+        unimplemented!()
     }
 
     fn tr_module(&mut self, t: &ast::Module, p: &ast::Modpath) -> Try<()> {
@@ -304,7 +308,7 @@ impl Translator {
                 }
             },
 
-            other => self.errors.push({
+            _ => self.errors.push({
                 Error::NotPermittedInGlobalScope(t.clone())
             })
         }
@@ -385,6 +389,14 @@ impl Translator {
             // operations produce larger output than input.
             if let Some(&&ast::Stmt::Naked { .. }) = iter.peek() {
                 scope.body.push(self.reflow(&mut iter)?);
+
+                // FIXME: Generate the following code:
+                //
+                //     listen
+                //     | #[print finished]
+                //     ;;
+                //
+                // This is surprisingly nontrivial.
             } else {
                 for stmt in self.tr_stmt(iter.next().unwrap())? {
                     scope.body.push(stmt);
@@ -468,6 +480,34 @@ impl Translator {
                 });
 
                 t
+            },
+
+            &ast::Stmt::Naked { .. } => {
+                return Err(Error::Internal({
+                    format!("Forgot to reflow a print statement: {:?}", t)
+                }))
+            },
+
+            &ast::Stmt::Recur { ref target } => {
+                vec![ir::Stmt::Recur {
+                    target: self.tr_fncall(target)?,
+                }]
+            },
+
+            &ast::Stmt::SendMsg { ref message, ref target } => {
+                unimplemented!()
+            },
+
+            &ast::Stmt::Trace { ref value } => {
+                vec![ir::Stmt::Trace {
+                    value: self.tr_expr(value)?,
+                }]
+            },
+
+            &ast::Stmt::Wait { ref value } => {
+                vec![ir::Stmt::Wait {
+                    value: self.tr_expr(value)?,
+                }]
             },
 
             _ => unimplemented!(),
@@ -574,7 +614,16 @@ impl Translator {
     }
 
     fn tr_fncall(&mut self, t: &ast::FnCall) -> Try<ir::FnCall> {
-        unimplemented!()
+        let &ast::FnCall(ref name, ref args) = t;
+
+        let fnid = self.ref_fnid(name)?;
+
+        let mut argv = Vec::with_capacity(args.len());
+        for arg in args {
+            argv.push(self.tr_expr(arg)?);
+        }
+
+        Ok(ir::FnCall(fnid, argv))
     }
 
     fn tr_str(&mut self, t: &ast::Str) -> Try<Vec<ir::Expr>> {

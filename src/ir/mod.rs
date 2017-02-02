@@ -121,6 +121,12 @@ pub struct Reg(pub u32);
 #[derive(Copy, Clone, Debug, PartialEq)]
 pub struct FnId(pub u32);
 
+impl From<Vec<Stmt>> for Scope {
+    fn from(body: Vec<Stmt>) -> Self {
+        Scope { body: body, }
+    }
+}
+
 use std::fmt::{Display, Error, Formatter, Write};
 
 impl Display for Atom {
