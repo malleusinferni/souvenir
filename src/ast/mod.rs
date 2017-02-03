@@ -1,4 +1,5 @@
 pub mod visit;
+pub mod check;
 
 #[derive(Clone, Debug, PartialEq)]
 pub struct Program {
@@ -97,6 +98,12 @@ pub struct FnCall(pub FnName, pub Vec<Expr>);
 pub struct FnName {
     pub name: String,
     pub in_module: Option<Modpath>,
+}
+
+#[derive(Clone, Debug, Eq, Hash, PartialEq)]
+pub struct QfdFnName {
+    pub name: String,
+    pub in_module: Modpath,
 }
 
 #[derive(Clone, Debug, PartialEq)]

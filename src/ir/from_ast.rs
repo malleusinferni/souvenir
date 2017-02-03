@@ -3,23 +3,6 @@ use std::collections::HashMap;
 use ast;
 use ir;
 
-impl ast::Program {
-    pub fn lower(self) -> Result<ir::Program, Vec<Error>> {
-        //let fn_ids = ast::
-
-        let tr = Translator {
-            program: ir::Program::default(),
-            labels: HashMap::new(),
-            gen_label: Counter(0, ir::Label),
-            context: None,
-            errors: vec![],
-            env: vec![],
-        };
-
-        tr.translate(self)
-    }
-}
-
 #[derive(Clone, Debug, PartialEq)]
 pub enum Error {
     NameErr(VarErr),
@@ -27,7 +10,7 @@ pub enum Error {
     InvalidAssign(ast::Ident),
     LabelNotFound(ast::Label),
     LabelNotLocal(ast::Label),
-    LabelRedefined(QualifiedLabel),
+    LabelRedefined(QfdLabel),
     NotPermittedInGlobalScope(ast::Stmt),
     Internal(String),
 }
@@ -35,7 +18,7 @@ pub enum Error {
 #[derive(Clone, Debug, PartialEq)]
 pub enum ErrorContext {
     Global(ast::Modpath),
-    Knot(QualifiedFn),
+    Knot(QfdFn),
 }
 
 type Try<T> = Result<T, Error>;
@@ -46,14 +29,14 @@ type Peek<'i, T> = ::std::iter::Peekable<::std::slice::Iter<'i, T>>;
 struct Counter<T>(u32, fn(u32) -> T);
 
 #[derive(Clone, Debug, Eq, Hash, PartialEq)]
-pub struct QualifiedFn(ast::Modpath, String);
+pub struct QfdFn(ast::Modpath, String);
 
 #[derive(Clone, Debug, Eq, Hash, PartialEq)]
-pub struct QualifiedLabel(ast::Modpath, String, String);
+pub struct QfdLabel(ast::Modpath, String, String);
 
 struct Translator {
     program: ir::Program,
-    labels: HashMap<QualifiedLabel, ir::Label>,
+    labels: HashMap<QfdLabel, ir::Label>,
     gen_label: Counter<ir::Label>,
     context: Option<ErrorContext>,
     errors: Vec<Error>,
@@ -254,7 +237,7 @@ impl Translator {
         Ok(id)
     }
 
-    fn qualify_label(&mut self, name: &str) -> Try<QualifiedLabel> {
+    fn qualify_label(&mut self, name: &str) -> Try<QfdLabel> {
         let ice = Error::Internal(format!("No context for error"));
         match (&self.context).as_ref().ok_or(ice)? {
             &ErrorContext::Global(_) => {
@@ -263,8 +246,8 @@ impl Translator {
                 }))
             },
 
-            &ErrorContext::Knot(QualifiedFn(ref modpath, ref func)) => {
-                Ok(QualifiedLabel(modpath.clone(), func.clone(), name.to_owned()))
+            &ErrorContext::Knot(QfdFn(ref modpath, ref func)) => {
+                Ok(QfdLabel(modpath.clone(), func.clone(), name.to_owned()))
             },
         }
     }
@@ -344,7 +327,7 @@ impl Translator {
         assert!(t.name.in_module.is_none());
 
         self.context = Some(ErrorContext::Knot({
-            QualifiedFn(p.clone(), name.clone())
+            QfdFn(p.clone(), name.clone())
         }));
 
         self.enter(StKind::Knot(name.clone()))?;
@@ -475,9 +458,6 @@ impl Translator {
     }
 
     fn tr_stmt(&mut self, t: &ast::Stmt) -> Try<Vec<ir::Stmt>> {
-        static LAMBDA_MSG_ARG: &'static str = "~MESSAGE~";
-        static LAMBDA_SENDER_ARG: &'static str = "~SENDER~";
-
         let t = match t {
             &ast::Stmt::Empty => vec![],
 
@@ -491,16 +471,7 @@ impl Translator {
             ],
 
             &ast::Stmt::Listen { ref name, ref arms } => {
-                let mut t = self.tr_stmt(&ast::Stmt::Trap {
-                    name: name.clone(),
-                    arms: arms.clone(),
-                })?;
-
-                t.push(ir::Stmt::Wait {
-                    value: ir::Expr::Infinity,
-                });
-
-                t
+                unimplemented!()
             },
 
             &ast::Stmt::Naked { .. } => {
@@ -536,77 +507,7 @@ impl Translator {
             },
 
             &ast::Stmt::Weave { ref name, ref arms } => {
-                let mut stmts = Vec::with_capacity(arms.len());
-                let mut trap_arms = Vec::with_capacity(arms.len());
-
-                for (i, arm) in arms.iter().enumerate() {
-                    let last_resort = match &arm.guard {
-                        &ast::Expr::Id(ast::Ident::Hole) => true,
-                        _ => false,
-                    };
-
-                    // Step 1: Write the guard clauses that populate the menu
-
-                    let guard_action = ir::Stmt::SendMsg {
-                        target: ir::Expr::PidZero,
-                        message: ir::Expr::List(vec!{
-                            ir::Expr::Atom(ir::Atom::MenuItem),
-
-                            if last_resort {
-                                ir::Expr::Atom(ir::Atom::LastResort)
-                            } else {
-                                ir::Expr::Int(i as i32)
-                            },
-                        }),
-                    };
-
-                    stmts.push(ir::Stmt::If {
-                        test: self.tr_expr(&arm.guard)?,
-                        success: vec![guard_action].into(),
-                        failure: vec![].into(),
-                    });
-
-                    // Step 2: Desugar an ast::WeaveArm into an ast::TrapArm
-                    // so we can translate the resulting trap statement
-
-                    let pat = ast::Pat::List(vec!{
-                        ast::Pat::Lit(ir::Atom::MenuItem.into()),
-                        ast::Pat::Lit(if last_resort {
-                            ir::Atom::LastResort.into()
-                        } else {
-                            ast::Lit::Int(i as i32)
-                        }),
-                    });
-
-                    // Can't really express PidZero here at the moment
-                    let sender = ast::Pat::Id(ast::Ident::Hole);
-
-                    trap_arms.push(ast::TrapArm {
-                        pattern: pat,
-                        origin: sender,
-                        guard: true.into(),
-                        body: arm.body.clone(),
-                    });
-                }
-
-                stmts.push(ir::Stmt::SendMsg {
-                    target: ir::Expr::PidZero,
-                    message: ir::Expr::List(vec!{
-                        ir::Expr::Atom(ir::Atom::MenuEnd),
-                    }),
-                });
-
-                // Wait a second. Why are we sending the message before the
-                // trap is installed? It probably won't receive a response so
-                // quickly that we lose the message, but even so, this is a
-                // race condition. FIXME.
-
-                stmts.extend(self.tr_stmt(&ast::Stmt::Listen {
-                    name: ast::Label::Anonymous,
-                    arms: trap_arms,
-                })?);
-
-                stmts
+                unimplemented!()
             },
 
             &ast::Stmt::Trap { ref name, ref arms } => {
