@@ -1,6 +1,6 @@
 use ast::*;
 
-use ast::check::ICE;
+use driver::ICE;
 
 pub trait Visitor {
     fn visit_program(&mut self, t: &Program) -> Result<(), ICE> {

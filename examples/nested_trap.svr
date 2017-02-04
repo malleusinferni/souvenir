@@ -1,0 +1,13 @@
+== start
+
+trap 'outer
+| AnyValue from AnyActor
+    -- This is not allowed until traps properly close over their environments,
+    -- like they're supposed to.
+    trap 'inner
+    | _
+        AnyActor <- AnyValue
+    ;;
+;;
+
+-> ok(1000000)

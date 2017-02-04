@@ -1,9 +1,14 @@
 use std::error::Error;
+use std::fmt;
 use std::io;
 use std::path::Path;
 
-use ast::{Program, Modpath, Module, ParseErr};
+use ast::{Program, Modpath, Module, ParseErr, QfdFnName};
 
+#[derive(Debug)]
+pub struct ICE(pub String);
+
+#[derive(Debug)]
 pub enum LoadErr {
     PathIsNotLoadable(String),
     ModpathIsNotUnicode(String),
@@ -13,8 +18,19 @@ pub enum LoadErr {
     Description(String),
 }
 
+#[derive(Debug)]
+pub enum BuildErr {
+    NoSuchModule(Modpath),
+    NoSuchKnot(QfdFnName),
+    NameShouldNotBeQualifiedInDef(QfdFnName),
+    KnotWasRedefined(QfdFnName),
+    WrongNumberOfArgs { wanted: usize, got: usize, },
+    Ice(ICE),
+    MultipleErrors(Vec<BuildErr>),
+}
+
 impl Program {
-    pub fn load(path: &Path) -> Result<Self, LoadErr> {
+    pub fn load_from_path(path: &Path) -> Result<Self, LoadErr> {
         let mut dirs = Vec::with_capacity(16);
 
         let mut files = Vec::with_capacity(16);
@@ -80,11 +96,18 @@ impl Program {
             modules: modules
         })
     }
+
+    pub fn compile(self) -> Result<Self, BuildErr> {
+        self.check_names()??;
+        Ok(self)
+    }
 }
 
 impl Modpath {
     fn from_path(path: &Path) -> Result<Self, LoadErr> {
         let display_path: String = path.to_string_lossy().into_owned();
+
+        let path = path.with_extension("");
 
         let mut elements = Vec::new();
         for component in path.components() {
@@ -125,5 +148,42 @@ impl<'a> From<&'a str> for LoadErr {
 impl From<String> for LoadErr {
     fn from(err: String) -> Self {
         LoadErr::Description(err)
+    }
+}
+
+impl fmt::Display for LoadErr {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        match self {
+            &LoadErr::Description(ref s) => writeln!(f, "{}", s),
+            &LoadErr::Parse(ref s) => writeln!(f, "{}", s),
+
+            &LoadErr::Io(ref err) => {
+                writeln!(f, "{}", err.description())
+            },
+
+            &LoadErr::PathIsNotLoadable(ref path) => {
+                writeln!(f, "Couldn't find modules in {}", path)
+            },
+
+            &LoadErr::ModpathIsNotUnicode(ref path) => {
+                writeln!(f, "Unable to decode {:?}", path)
+            },
+
+            &LoadErr::ModpathIsNotValid(ref path) => {
+                writeln!(f, "{:?} is not a valid module path", path)
+            },
+        }
+    }
+}
+
+impl From<ICE> for BuildErr {
+    fn from(ice: ICE) -> Self {
+        BuildErr::Ice(ice)
+    }
+}
+
+impl From<Vec<BuildErr>> for BuildErr {
+    fn from(errs: Vec<BuildErr>) -> Self {
+        BuildErr::MultipleErrors(errs)
     }
 }

@@ -3,10 +3,10 @@ use std::collections::HashMap;
 use ast::*;
 use ast::visit::*;
 
-use ast::check::{UserErr, ICE};
+use driver::{BuildErr, ICE};
 
 impl Program {
-    pub fn check_names(&self) -> Result<Result<(), Vec<UserErr>>, ICE> {
+    pub fn check_names(&self) -> Result<Result<(), Vec<BuildErr>>, ICE> {
         let mut pass = Pass {
             defs: HashMap::new(),
             current_modpath: None,
@@ -31,7 +31,7 @@ struct KnotDef {
 struct Pass {
     defs: HashMap<QfdFnName, KnotDef>,
     current_modpath: Option<Modpath>,
-    errors: Vec<UserErr>,
+    errors: Vec<BuildErr>,
 }
 
 impl Pass {
@@ -82,13 +82,13 @@ impl Visitor for Pass {
         };
 
         if in_module.is_some() {
-            self.errors.push(UserErr::NameShouldNotBeQualifiedInDef({
+            self.errors.push(BuildErr::NameShouldNotBeQualifiedInDef({
                 qualified.clone()
             }));
         }
 
         if self.defs.contains_key(&qualified) {
-            self.errors.push(UserErr::KnotWasRedefined(qualified.clone()));
+            self.errors.push(BuildErr::KnotWasRedefined(qualified.clone()));
         } else {
             self.defs.insert(qualified, KnotDef {
                 args_wanted: t.args.len(),
@@ -118,7 +118,7 @@ impl Visitor for Pass {
             Some(def) => {
                 def.times_called += 1;
                 if args.len() != def.args_wanted {
-                    Some(UserErr::WrongNumberOfArgs {
+                    Some(BuildErr::WrongNumberOfArgs {
                         wanted: def.args_wanted,
                         got: args.len(),
                     })
@@ -126,7 +126,7 @@ impl Visitor for Pass {
                     None
                 }
             },
-            None => { Some(UserErr::NoSuchKnot(qualified.clone())) },
+            None => { Some(BuildErr::NoSuchKnot(qualified.clone())) },
         };
 
         if let Some(err) = err {

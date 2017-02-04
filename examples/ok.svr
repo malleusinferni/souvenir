@@ -7,3 +7,12 @@ weave 'foo
 | _
     -> dest_default
 ;;
+
+== dest1
+> dest1 is a real knot
+
+== dest2(A, B, C)
+> dest2 wants some arguments and we're not going to give them to it
+
+== dest_default
+-> knot_name

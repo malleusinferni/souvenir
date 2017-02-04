@@ -1,5 +1,6 @@
 pub mod visit;
 pub mod check;
+pub mod pretty_print;
 
 #[derive(Clone, Debug, PartialEq)]
 pub struct Program {

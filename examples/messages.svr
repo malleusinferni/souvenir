@@ -1,0 +1,17 @@
+== start
+
+let Timer = spawn timeout(100, Self)
+
+trap
+| #ok from Timer
+    > ok
+    wait 25
+    -> start
+;;
+
+wait 1000
+
+== timeout(Count, Dst)
+
+wait Count
+Dst <- #ok
