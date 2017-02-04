@@ -22,9 +22,8 @@ pub enum CompileErr {
 
 #[derive(Clone, Debug)]
 pub enum ErrCtx {
-    Prelude(Modpath, Vec<ast::Stmt>),
-    KnotDef(Modpath, ast::FnName),
-    Local(Modpath, ast::FnName, Vec<ast::Stmt>),
+    Global(Modpath, Vec<ast::Stmt>),
+    Local(ast::QfdFnName, Vec<ast::Stmt>),
     NoContext,
 }
 
@@ -163,24 +162,63 @@ impl Modpath {
 impl ErrCtx {
     pub fn pop(&mut self) -> Try<()> {
         *self = match self.clone() {
-            ErrCtx::Prelude(modpath, mut stack) => {
+            ErrCtx::Global(modpath, mut stack) => {
                 match stack.pop() {
-                    Some(_) => ErrCtx::Prelude(modpath, stack),
+                    Some(_) => ErrCtx::Global(modpath, stack),
                     None => ErrCtx::NoContext,
                 }
             },
 
-            ErrCtx::KnotDef(_, _) => ErrCtx::NoContext,
-
-            ErrCtx::Local(modpath, knot_name, mut stack) => {
+            ErrCtx::Local(knot_name, mut stack) => {
                 match stack.pop() {
-                    Some(_) => ErrCtx::Local(modpath, knot_name, stack),
-                    None => ErrCtx::NoContext,
+                    Some(_) => ErrCtx::Local(knot_name, stack),
+                    None => ErrCtx::Global(knot_name.in_module, vec![]),
                 }
             },
 
             ErrCtx::NoContext => ice!("Spurious exit from error context"),
         };
+
+        Ok(())
+    }
+
+    pub fn modpath(&self) -> Try<Modpath> {
+        match self {
+            &ErrCtx::Global(ref path, _) => Ok(path.clone()),
+            &ErrCtx::Local(ast::QfdFnName { ref in_module, .. }, _) => {
+                Ok(in_module.clone())
+            },
+            _ => ice!("No module path in error context"),
+        }
+    }
+
+    pub fn begin_module(&mut self, path: &Modpath) {
+        *self = ErrCtx::Global(path.clone(), vec![]);
+    }
+
+    pub fn begin_knot(&mut self, name: &str) -> Try<()> {
+        let fn_name = ast::QfdFnName {
+            name: name.to_owned(),
+            in_module: self.modpath()?,
+        };
+
+        *self = ErrCtx::Local(fn_name, vec![]);
+
+        Ok(())
+    }
+
+    pub fn push_stmt(&mut self, stmt: &ast::Stmt) -> Try<()> {
+        match self {
+            &mut ErrCtx::Local(_, ref mut stack) => {
+                stack.push(stmt.clone());
+            },
+
+            &mut ErrCtx::Global(_, ref mut stack) => {
+                stack.push(stmt.clone());
+            },
+
+            _ => ice!("Statement outside of error context"),
+        }
 
         Ok(())
     }

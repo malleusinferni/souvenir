@@ -1,21 +1,28 @@
 use ast::*;
 
-use driver::Try;
+use driver::{Try, ErrCtx};
 
 pub trait Visitor {
+    fn error_context(&mut self) -> &mut ErrCtx;
+
     fn visit_program(&mut self, t: &Program) -> Try<()> {
-        each(&t.modules, |&(_, ref t)| self.visit_module(t))
+        each(&t.modules, |&(ref modpath, ref t)| {
+            self.visit_module(t, modpath)
+        })
     }
 
-    fn visit_module(&mut self, t: &Module) -> Try<()> {
+    fn visit_module(&mut self, t: &Module, p: &Modpath) -> Try<()> {
+        self.error_context().begin_module(p);
         each(&t.globals.0, |t| self.visit_stmt(t))?;
         each(&t.knots, |t| self.visit_knot(t))
     }
 
     fn visit_knot(&mut self, t: &Knot) -> Try<()> {
+        self.error_context().begin_knot(&t.name.name)?;
         self.visit_fnname(&t.name)?;
         each(&t.args, |t| self.visit_ident(t))?;
-        self.visit_block(&t.body)
+        self.visit_block(&t.body)?;
+        self.error_context().pop()
     }
 
     fn visit_trap_arm(&mut self, t: &TrapArm) -> Try<()> {
@@ -43,62 +50,62 @@ pub trait Visitor {
     }
 
     fn visit_stmt(&mut self, t: &Stmt) -> Try<()> {
+        self.error_context().push_stmt(t)?;
+
         match t {
-            &Stmt::Empty => {
-                Ok(())
-            },
+            &Stmt::Empty => (),
 
             &Stmt::Disarm { ref target } => {
-                self.visit_label(target)
+                self.visit_label(target)?;
             },
 
             &Stmt::Let { ref value, ref name } => {
                 self.visit_expr(value)?;
-                self.visit_ident(name)
+                self.visit_ident(name)?;
             },
 
             &Stmt::Listen { ref name, ref arms } => {
                 self.visit_label(name)?;
-                each(arms, |t| self.visit_trap_arm(t))
+                each(arms, |t| self.visit_trap_arm(t))?;
             },
 
             &Stmt::Naked { ref message, ref target } => {
                 self.visit_string(message)?;
 
                 if let Some(target) = target.as_ref() {
-                    self.visit_ident(target)
-                } else {
-                    Ok(())
+                    self.visit_ident(target)?;
                 }
             },
 
             &Stmt::Recur { ref target } => {
-                self.visit_fncall(target)
+                self.visit_fncall(target)?;
             },
 
             &Stmt::SendMsg { ref target, ref message } => {
                 self.visit_expr(message)?;
-                self.visit_ident(target)
+                self.visit_ident(target)?;
             },
 
             &Stmt::Trace { ref value } => {
-                self.visit_expr(value)
+                self.visit_expr(value)?;
             },
 
             &Stmt::Trap { ref name, ref arms } => {
                 self.visit_label(name)?;
-                each(arms, |t| self.visit_trap_arm(t))
+                each(arms, |t| self.visit_trap_arm(t))?;
             },
 
             &Stmt::Wait { ref value } => {
-                self.visit_expr(value)
+                self.visit_expr(value)?;
             },
 
             &Stmt::Weave { ref name, ref arms } => {
                 self.visit_label(name)?;
-                each(arms, |t| self.visit_weave_arm(t))
+                each(arms, |t| self.visit_weave_arm(t))?;
             },
-        }
+        };
+
+        self.error_context().pop()
     }
 
     fn visit_expr(&mut self, t: &Expr) -> Try<()> {

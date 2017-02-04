@@ -35,21 +35,12 @@ struct Pass {
 }
 
 impl Pass {
-    fn modpath(&self) -> Try<Modpath> {
-        Ok(match &self.context {
-            &ErrCtx::NoContext => ice!("Unable to look up module path"),
-            &ErrCtx::Prelude(ref path, _) => path.clone(),
-            &ErrCtx::KnotDef(ref path, _) => path.clone(),
-            &ErrCtx::Local(ref path, _, _) => path.clone(),
-        })
-    }
-
     fn qualify(&self, knot_name: &FnName) -> Try<QfdFnName> {
         Ok(QfdFnName {
             name: knot_name.name.clone(),
             in_module: match knot_name.in_module.as_ref() {
                 Some(modpath) => modpath.clone(),
-                None => self.modpath()?,
+                None => self.context.modpath()?,
             },
         })
     }
@@ -57,37 +48,16 @@ impl Pass {
     fn push_err(&mut self, err: BuildErr) {
         self.errors.push((err, self.context.clone()));
     }
-}
 
-impl Visitor for Pass {
-    fn visit_program(&mut self, t: &Program) -> Try<()> {
-        // Stage 1: Collect knot names
-        for &(ref modpath, ref module) in t.modules.iter() {
-            self.context = ErrCtx::Prelude(modpath.clone(), vec![]);
-            for knot in module.knots.iter() {
-                self.visit_knot(knot)?;
-            }
-        }
-
-        // Stage 2: Check argument counts
-        for &(ref modpath, ref module) in t.modules.iter() {
-            self.context = ErrCtx::Prelude(modpath.clone(), vec![]);
-            self.visit_module(module)?;
-        }
-
-        Ok(())
-    }
-
-    fn visit_knot(&mut self, t: &Knot) -> Try<()> {
-        let modpath = self.modpath()?;
-        self.context = ErrCtx::KnotDef(modpath.clone(), t.name.clone());
-
+    fn def_knot(&mut self, t: &Knot, modpath: &Modpath) -> Try<()> {
         let &FnName { ref name, ref in_module } = &t.name;
 
         let qualified = QfdFnName {
             name: name.clone(),
-            in_module: modpath,
+            in_module: modpath.clone(),
         };
+
+        self.context = ErrCtx::Local(qualified.clone(), vec![]);
 
         if in_module.is_some() {
             self.push_err(BuildErr::KnotWasOverqualified);
@@ -102,15 +72,26 @@ impl Visitor for Pass {
             });
         }
 
-        Ok(()) // Don't recurse into knot bodies here
+        Ok(())
+    }
+}
+
+impl Visitor for Pass {
+    fn error_context(&mut self) -> &mut ErrCtx {
+        &mut self.context
     }
 
-    fn visit_module(&mut self, t: &Module) -> Try<()> {
-        self.visit_block(&t.globals)?;
+    fn visit_program(&mut self, t: &Program) -> Try<()> {
+        // Stage 1: Collect knot names
+        for &(ref modpath, ref module) in t.modules.iter() {
+            for knot in module.knots.iter() {
+                self.def_knot(knot, modpath)?;
+            }
+        }
 
-        // Skip visit_knot()!
-        for knot in t.knots.iter() {
-            self.visit_block(&knot.body)?;
+        // Stage 2: Check argument counts
+        for &(ref modpath, ref module) in t.modules.iter() {
+            self.visit_module(module, modpath)?;
         }
 
         Ok(())
