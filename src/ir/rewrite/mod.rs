@@ -5,11 +5,18 @@ pub mod desugar_match;
 
 use ir::*;
 
-pub enum Error {
-    ICE(String),
-}
+use driver::Try;
 
-pub type Try<T> = Result<T, Error>;
+#[derive(Clone, Debug)]
+pub struct Counter<T>(u32, fn(u32) -> T);
+
+impl<T> Counter<T> {
+    pub fn next(&mut self) -> T {
+        let i = self.0;
+        self.0 += 1;
+        (self.1)(i)
+    }
+}
 
 pub trait Rewriter {
     fn rw_program(&mut self, t: Program) -> Try<Program> {
@@ -244,8 +251,8 @@ pub trait Rewriter {
 }
 
 #[inline(always)]
-pub fn each<T, F>(tree: Vec<T>, mut callback: F) -> Result<Vec<T>, Error>
-    where F: FnMut(T) -> Result<T, Error>
+pub fn each<T, F>(tree: Vec<T>, mut callback: F) -> Try<Vec<T>>
+    where F: FnMut(T) -> Try<T>
 {
     let mut out = Vec::with_capacity(tree.len());
     for item in tree.into_iter() { out.push(callback(item)?) }

@@ -1,16 +1,16 @@
 extern crate rand;
 extern crate lalrpop_util;
 
+#[macro_use]
+pub mod driver;
+
 pub mod ast;
 pub mod parser;
 pub mod tokenizer;
 
 pub mod ir;
-//pub mod pass;
 
 pub mod vm;
-
-pub mod driver;
 
 #[test]
 fn parse_examples() {

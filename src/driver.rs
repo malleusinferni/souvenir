@@ -3,9 +3,32 @@ use std::fmt;
 use std::io;
 use std::path::Path;
 
-use ast::{Program, Modpath, Module, ParseErr, QfdFnName};
+use ast::{self, Program, Modpath, Module, ParseErr};
+
+macro_rules! ice {
+    ( $( $arg:tt )* ) => {
+        return Err(::driver::ICE(format!($($arg)*)).into())
+    }
+}
+
+pub type Try<T> = Result<T, CompileErr>;
 
 #[derive(Debug)]
+pub enum CompileErr {
+    Internal(ICE),
+    Load(LoadErr),
+    BuildErrs(Vec<(BuildErr, ErrCtx)>),
+}
+
+#[derive(Clone, Debug)]
+pub enum ErrCtx {
+    Prelude(Modpath, Vec<ast::Stmt>),
+    KnotDef(Modpath, ast::FnName),
+    Local(Modpath, ast::FnName, Vec<ast::Stmt>),
+    NoContext,
+}
+
+#[derive(Clone, Debug)]
 pub struct ICE(pub String);
 
 #[derive(Debug)]
@@ -18,15 +41,26 @@ pub enum LoadErr {
     Description(String),
 }
 
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub enum BuildErr {
     NoSuchModule(Modpath),
-    NoSuchKnot(QfdFnName),
-    NameShouldNotBeQualifiedInDef(QfdFnName),
-    KnotWasRedefined(QfdFnName),
-    WrongNumberOfArgs { wanted: usize, got: usize, },
-    Ice(ICE),
-    MultipleErrors(Vec<BuildErr>),
+    NoSuchKnot(ast::QfdFnName),
+    NoSuchLabel(ast::Label),
+    NoSuchVar(String),
+    InvalidNumber(String),
+    InvalidAssignToSelf(ast::Stmt),
+    InvalidAssignToHole(ast::Stmt),
+    KnotWasRedefined(ast::QfdFnName),
+    KnotWasOverqualified,
+    IoInPrelude,
+    LabelInPrelude(ast::Label),
+    LabelRedefined(ast::Label),
+    WrongNumberOfArgs {
+        fncall: ast::FnCall,
+        wanted: usize,
+        got: usize,
+    },
+    MultipleErrors(Vec<(BuildErr, ErrCtx)>),
 }
 
 impl Program {
@@ -97,8 +131,8 @@ impl Program {
         })
     }
 
-    pub fn compile(self) -> Result<Self, BuildErr> {
-        self.check_names()??;
+    pub fn compile(self) -> Result<Self, CompileErr> {
+        self.check_names()?;
         Ok(self)
     }
 }
@@ -123,6 +157,32 @@ impl Modpath {
         }
 
         Ok(Modpath(elements))
+    }
+}
+
+impl ErrCtx {
+    pub fn pop(&mut self) -> Try<()> {
+        *self = match self.clone() {
+            ErrCtx::Prelude(modpath, mut stack) => {
+                match stack.pop() {
+                    Some(_) => ErrCtx::Prelude(modpath, stack),
+                    None => ErrCtx::NoContext,
+                }
+            },
+
+            ErrCtx::KnotDef(_, _) => ErrCtx::NoContext,
+
+            ErrCtx::Local(modpath, knot_name, mut stack) => {
+                match stack.pop() {
+                    Some(_) => ErrCtx::Local(modpath, knot_name, stack),
+                    None => ErrCtx::NoContext,
+                }
+            },
+
+            ErrCtx::NoContext => ice!("Spurious exit from error context"),
+        };
+
+        Ok(())
     }
 }
 
@@ -176,14 +236,20 @@ impl fmt::Display for LoadErr {
     }
 }
 
-impl From<ICE> for BuildErr {
-    fn from(ice: ICE) -> Self {
-        BuildErr::Ice(ice)
+impl From<LoadErr> for CompileErr {
+    fn from(err: LoadErr) -> Self {
+        CompileErr::Load(err)
     }
 }
 
-impl From<Vec<BuildErr>> for BuildErr {
-    fn from(errs: Vec<BuildErr>) -> Self {
-        BuildErr::MultipleErrors(errs)
+impl From<ICE> for CompileErr {
+    fn from(ice: ICE) -> Self {
+        CompileErr::Internal(ice)
+    }
+}
+
+impl From<Vec<(BuildErr, ErrCtx)>> for CompileErr {
+    fn from(errs: Vec<(BuildErr, ErrCtx)>) -> Self {
+        CompileErr::BuildErrs(errs)
     }
 }

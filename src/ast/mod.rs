@@ -1,5 +1,6 @@
 pub mod visit;
 pub mod check;
+//pub mod translate;
 pub mod pretty_print;
 
 #[derive(Clone, Debug, PartialEq)]
@@ -105,6 +106,12 @@ pub struct FnName {
 pub struct QfdFnName {
     pub name: String,
     pub in_module: Modpath,
+}
+
+#[derive(Clone, Debug, Eq, Hash, PartialEq)]
+pub struct QfdLabel {
+    pub name: String,
+    pub in_knot: QfdFnName,
 }
 
 #[derive(Clone, Debug, PartialEq)]

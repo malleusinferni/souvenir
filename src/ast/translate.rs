@@ -3,142 +3,20 @@ use std::collections::HashMap;
 use ast;
 use ir;
 
-#[derive(Clone, Debug, PartialEq)]
-pub enum Error {
-    NameErr(VarErr),
-    InvalidInt(String),
-    InvalidAssign(ast::Ident),
-    LabelNotFound(ast::Label),
-    LabelNotLocal(ast::Label),
-    LabelRedefined(QfdLabel),
-    NotPermittedInGlobalScope(ast::Stmt),
-    Internal(String),
-}
-
-#[derive(Clone, Debug, PartialEq)]
-pub enum ErrorContext {
-    Global(ast::Modpath),
-    Knot(QfdFn),
-}
-
-type Try<T> = Result<T, Error>;
+use driver::{Try, ErrCtx, BuildErr};
 
 type Peek<'i, T> = ::std::iter::Peekable<::std::slice::Iter<'i, T>>;
 
-#[derive(Clone, Debug)]
-struct Counter<T>(u32, fn(u32) -> T);
-
-#[derive(Clone, Debug, Eq, Hash, PartialEq)]
-pub struct QfdFn(ast::Modpath, String);
-
-#[derive(Clone, Debug, Eq, Hash, PartialEq)]
-pub struct QfdLabel(ast::Modpath, String, String);
-
 struct Translator {
     program: ir::Program,
-    labels: HashMap<QfdLabel, ir::Label>,
-    gen_label: Counter<ir::Label>,
-    context: Option<ErrorContext>,
-    errors: Vec<Error>,
-    env: Vec<Scope>,
-}
-
-#[derive(Clone, Debug, PartialEq)]
-pub enum VarErr {
-    Undefined(String),
-    Unused(String),
-}
-
-#[derive(Clone, Debug)]
-enum StKind {
-    Global,
-    Knot(String),
-    Weave,
-    WeaveArm(u32),
-    Trap,
-    TrapArm(u32),
-    Listen,
-}
-
-#[derive(Clone, Debug)]
-struct Scope {
-    stmt_kind: StKind,
-    vars: HashMap<String, Var>,
-    errors: Vec<VarErr>,
-    gen_var: Counter<ir::Reg>,
-}
-
-#[derive(Clone, Debug)]
-struct Var {
-    reg: ir::Reg,
-    eval_count: u32,
-    defined: bool,
-}
-
-impl Scope {
-    fn new() -> Self {
-        Scope {
-            stmt_kind: StKind::Global,
-            gen_var: Counter(0, ir::Reg),
-            vars: HashMap::new(),
-            errors: Vec::new(),
-        }
-    }
-
-    fn child_with(&self, stmt_kind: StKind) -> Self {
-        Scope {
-            stmt_kind: stmt_kind,
-
-            gen_var: self.gen_var.clone(),
-
-            vars: HashMap::new(),
-            errors: Vec::new(),
-        }
-    }
-
-    fn has(&self, name: &str) -> bool {
-        self.vars.contains_key(name)
-    }
-
-    fn bind(&mut self, name: String) -> ir::Reg {
-        let reg = self.gen_var.next();
-
-        let var = Var {
-            reg: reg,
-            eval_count: 0,
-            defined: true,
-        };
-
-        if let Some(var) = self.vars.insert(name.clone(), var) {
-            if !var.defined {
-                self.errors.push(VarErr::Undefined(name));
-            } else if var.eval_count < 1 {
-                self.errors.push(VarErr::Unused(name))
-            }
-        }
-
-        reg
-    }
-
-    fn eval(&mut self, name: &str) -> ir::Reg {
-        if let Some(var) = self.vars.get_mut(name) {
-            var.eval_count += 1;
-            return var.reg;
-        }
-
-        let reg = self.gen_var.next();
-        self.vars.insert(name.to_owned(), Var {
-            reg: reg,
-            eval_count: 1,
-            defined: false,
-        });
-
-        return reg;
-    }
+    //labels: HashMap<ast::QfdLabel, ir::Label>,
+    //gen_label: Counter<ir::Label>,
+    context: ErrCtx,
+    errors: Vec<(BuildErr, ErrCtx)>,
 }
 
 impl Translator {
-    fn translate(mut self, input: ast::Program) -> Result<ir::Program, Vec<Error>> {
+    fn translate(mut self, input: ast::Program) -> Try<ir::Program> {
         for (modpath, module) in input.modules {
             self.tr_module(&module, &modpath)?;
         }
@@ -146,114 +24,8 @@ impl Translator {
         if self.errors.is_empty() {
             Ok(self.program)
         } else {
-            Err(self.errors)
+            Err(self.errors.into())
         }
-    }
-
-    fn enter(&mut self, stmt_kind: StKind) -> Try<()> {
-        let new = if let Some(parent) = self.env.iter().last() {
-            parent.child_with(stmt_kind)
-        } else {
-            Scope::new()
-        };
-
-        self.env.push(new);
-
-        Ok(())
-    }
-
-    fn leave(&mut self) -> Try<()> {
-        let scope = self.env.pop()
-            .ok_or(Error::Internal(format!("Scope management error")))?;
-
-        for err in scope.errors.into_iter() {
-            self.scope()?.errors.push(err);
-        }
-
-        Ok(())
-    }
-
-    fn scope(&mut self) -> Try<&mut Scope> {
-        self.env.iter_mut().last()
-            .ok_or(Error::Internal(format!("Scope management error")))
-    }
-
-    fn assign(&mut self, name: &str) -> Try<ir::Reg> {
-        assert!(name != "Self");
-        assert!(name != "_");
-
-        Ok(self.scope()?.bind(name.to_owned()))
-    }
-
-    fn eval(&mut self, name: &str) -> Try<ir::Expr> {
-        Ok(ir::Expr::Id(self.scope()?.eval(name)))
-    }
-
-    fn lookup_var(&self, name: &str) -> bool {
-        for scope in self.env.iter().rev() {
-            if scope.has(name) { return true; }
-        }
-
-        false
-    }
-
-    fn def_label(&mut self, t: &ast::Label) -> Try<()> {
-        let value = self.gen_label.next();
-
-        let name = match t {
-            &ast::Label::Local { ref name } => name.clone(),
-            &ast::Label::Anonymous => format!("[label_{:0x}]", value.0),
-        };
-
-        let qualified = self.qualify_label(&name)?;
-
-        if self.labels.contains_key(&qualified) {
-            self.errors.push(Error::LabelRedefined(qualified));
-        } else {
-            let id = self.gen_label.next();
-            self.labels.insert(qualified, id);
-        }
-
-        Ok(())
-    }
-
-    fn ref_label(&mut self, t: &ast::Label) -> Try<ir::Label> {
-        let name = match t {
-            &ast::Label::Local { ref name } => name,
-            _ => return Err(Error::Internal({
-                format!("Attempted to dereference an anonymous label")
-            })),
-        };
-
-        let qualified = self.qualify_label(name)?;
-
-        let labels = &mut self.labels;
-        let gen = &mut self.gen_label;
-
-        let id = labels.entry(qualified).or_insert_with(|| {
-            gen.next()
-        }).clone();
-
-        Ok(id)
-    }
-
-    fn qualify_label(&mut self, name: &str) -> Try<QfdLabel> {
-        let ice = Error::Internal(format!("No context for error"));
-        match (&self.context).as_ref().ok_or(ice)? {
-            &ErrorContext::Global(_) => {
-                Err(Error::LabelNotLocal(ast::Label::Local {
-                    name: name.to_owned()
-                }))
-            },
-
-            &ErrorContext::Knot(QfdFn(ref modpath, ref func)) => {
-                Ok(QfdLabel(modpath.clone(), func.clone(), name.to_owned()))
-            },
-        }
-    }
-
-    fn ref_fnid(&mut self, t: &ast::FnName) -> Try<ir::FnId> {
-        unimplemented!()
     }
 
     fn tr_module(&mut self, t: &ast::Module, p: &ast::Modpath) -> Try<()> {
@@ -385,29 +157,6 @@ impl Translator {
         self.leave()?;
 
         Ok(scope)
-    }
-
-    /// Generates the following code:
-    ///
-    /// ```souvenir
-    /// listen
-    /// | #[print finished]
-    /// ;;
-    /// ```
-    fn gen_wait_after_write(&mut self) -> Try<ir::Stmt> {
-        self.gen_listen(vec!{
-            ir::MatchArm {
-                pattern: ir::Pat::List(vec!{
-                    unimplemented!(),
-                }),
-                body: unimplemented!(),
-            }
-        })
-    }
-
-    fn gen_listen(&mut self, arms: Vec<ir::MatchArm>) -> Try<ir::Stmt> {
-        let label = self.def_label(&ast::Label::Anonymous)?;
-        unimplemented!()
     }
 
     fn reflow(&mut self, iter: &mut Peek<ast::Stmt>) -> Try<ir::Stmt> {
@@ -637,37 +386,6 @@ impl Translator {
             &ast::Str::Plain(ref text) => {
                 Ok(vec![ir::Expr::Strlit(text.clone())])
             }
-        }
-    }
-}
-
-impl From<Error> for Vec<Error> {
-    fn from(e: Error) -> Self {
-        vec![e]
-    }
-}
-
-use std::fmt::{self, Display, Formatter};
-
-impl Display for StKind {
-    fn fmt(&self, f: &mut Formatter) -> fmt::Result {
-        unimplemented!()
-    }
-}
-
-impl<T> Counter<T> {
-    fn next(&mut self) -> T {
-        let i = self.0;
-        self.0 += 1;
-        (self.1)(i)
-    }
-}
-
-impl From<ir::Atom> for ast::Lit {
-    fn from(a: ir::Atom) -> Self {
-        match a {
-            ir::Atom::User(a) => ast::Lit::Atom(a),
-            other => ast::Lit::Atom(other.name().to_owned()),
         }
     }
 }

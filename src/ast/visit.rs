@@ -1,48 +1,48 @@
 use ast::*;
 
-use driver::ICE;
+use driver::Try;
 
 pub trait Visitor {
-    fn visit_program(&mut self, t: &Program) -> Result<(), ICE> {
+    fn visit_program(&mut self, t: &Program) -> Try<()> {
         each(&t.modules, |&(_, ref t)| self.visit_module(t))
     }
 
-    fn visit_module(&mut self, t: &Module) -> Result<(), ICE> {
+    fn visit_module(&mut self, t: &Module) -> Try<()> {
         each(&t.globals.0, |t| self.visit_stmt(t))?;
         each(&t.knots, |t| self.visit_knot(t))
     }
 
-    fn visit_knot(&mut self, t: &Knot) -> Result<(), ICE> {
+    fn visit_knot(&mut self, t: &Knot) -> Try<()> {
         self.visit_fnname(&t.name)?;
         each(&t.args, |t| self.visit_ident(t))?;
         self.visit_block(&t.body)
     }
 
-    fn visit_trap_arm(&mut self, t: &TrapArm) -> Result<(), ICE> {
+    fn visit_trap_arm(&mut self, t: &TrapArm) -> Try<()> {
         self.visit_pattern(&t.pattern)?;
         self.visit_pattern(&t.origin)?;
         self.visit_expr(&t.guard)?;
         self.visit_block(&t.body)
     }
 
-    fn visit_weave_arm(&mut self, t: &WeaveArm) -> Result<(), ICE> {
+    fn visit_weave_arm(&mut self, t: &WeaveArm) -> Try<()> {
         self.visit_expr(&t.guard)?;
         self.visit_expr(&t.message)?;
         self.visit_block(&t.body)
     }
 
-    fn visit_fncall(&mut self, t: &FnCall) -> Result<(), ICE> {
+    fn visit_fncall(&mut self, t: &FnCall) -> Try<()> {
         let &FnCall(ref name, ref args) = t;
         self.visit_fnname(name)?;
         each(args, |t| self.visit_expr(t))
     }
 
-    fn visit_block(&mut self, t: &Block) -> Result<(), ICE> {
+    fn visit_block(&mut self, t: &Block) -> Try<()> {
         let &Block(ref t) = t;
         each(t, |t| self.visit_stmt(t))
     }
 
-    fn visit_stmt(&mut self, t: &Stmt) -> Result<(), ICE> {
+    fn visit_stmt(&mut self, t: &Stmt) -> Try<()> {
         match t {
             &Stmt::Empty => {
                 Ok(())
@@ -101,7 +101,7 @@ pub trait Visitor {
         }
     }
 
-    fn visit_expr(&mut self, t: &Expr) -> Result<(), ICE> {
+    fn visit_expr(&mut self, t: &Expr) -> Try<()> {
         match t {
             &Expr::Id(ref ident) => {
                 self.visit_ident(ident)
@@ -129,7 +129,7 @@ pub trait Visitor {
         }
     }
 
-    fn visit_pattern(&mut self, t: &Pat) -> Result<(), ICE> {
+    fn visit_pattern(&mut self, t: &Pat) -> Try<()> {
         match t {
             &Pat::Id(ref ident) => {
                 self.visit_ident(ident)
@@ -145,7 +145,7 @@ pub trait Visitor {
         }
     }
 
-    fn visit_literal(&mut self, t: &Lit) -> Result<(), ICE> {
+    fn visit_literal(&mut self, t: &Lit) -> Try<()> {
         match t {
             &Lit::Atom(ref name) => {
                 self.visit_atom_name(name)
@@ -161,29 +161,29 @@ pub trait Visitor {
         }
     }
 
-    fn visit_ident(&mut self, _t: &Ident) -> Result<(), ICE> {
+    fn visit_ident(&mut self, _t: &Ident) -> Try<()> {
         Ok(())
     }
 
-    fn visit_label(&mut self, _t: &Label) -> Result<(), ICE> {
+    fn visit_label(&mut self, _t: &Label) -> Try<()> {
         Ok(())
     }
 
-    fn visit_fnname(&mut self, _t: &FnName) -> Result<(), ICE> {
+    fn visit_fnname(&mut self, _t: &FnName) -> Try<()> {
         Ok(())
     }
 
-    fn visit_string(&mut self, t: &Str) -> Result<(), ICE> {
+    fn visit_string(&mut self, t: &Str) -> Try<()> {
         match t {
             &Str::Plain(_) => Ok(())
         }
     }
 
-    fn visit_atom_name(&mut self, _t: &str) -> Result<(), ICE> {
+    fn visit_atom_name(&mut self, _t: &str) -> Try<()> {
         Ok(())
     }
 
-    fn visit_invalid_int(&mut self, _t: &str) -> Result<(), ICE> {
+    fn visit_invalid_int(&mut self, _t: &str) -> Try<()> {
         Ok(())
     }
 }
