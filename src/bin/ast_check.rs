@@ -11,9 +11,10 @@ fn main() {
     use souvenir::ast::Program;
 
     let program = Program::load_from_path(args[1].as_ref())
-        .expect("Can't load program")
-        .compile()
-        .expect("Oh no!");
+        .expect("Can't load program");
 
-    println!("{:#?}", program);
+    match program.compile() {
+        Ok(program) => println!("{:#?}", program),
+        Err(e) => println!("{}", e),
+    };
 }

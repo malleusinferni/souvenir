@@ -3,7 +3,7 @@ use std::collections::HashMap;
 use ast::*;
 use ast::visit::*;
 
-use driver::{Try, BuildErr, ErrCtx};
+use driver::{Try, BuildErr, ErrCtx, BuildErrWithCtx};
 
 impl Program {
     pub fn check_names(&self) -> Try<()> {
@@ -31,7 +31,7 @@ struct KnotDef {
 struct Pass {
     defs: HashMap<QfdFnName, KnotDef>,
     context: ErrCtx,
-    errors: Vec<(BuildErr, ErrCtx)>,
+    errors: Vec<BuildErrWithCtx>,
 }
 
 impl Pass {
@@ -46,7 +46,7 @@ impl Pass {
     }
 
     fn push_err(&mut self, err: BuildErr) {
-        self.errors.push((err, self.context.clone()));
+        self.errors.push(BuildErrWithCtx(err, self.context.clone()));
     }
 
     fn def_knot(&mut self, t: &Knot, modpath: &Modpath) -> Try<()> {
@@ -60,7 +60,7 @@ impl Pass {
         self.context = ErrCtx::Local(qualified.clone(), vec![]);
 
         if in_module.is_some() {
-            self.push_err(BuildErr::KnotWasOverqualified);
+            self.push_err(BuildErr::KnotWasOverqualified(t.name.clone()));
         }
 
         if self.defs.contains_key(&qualified) {
