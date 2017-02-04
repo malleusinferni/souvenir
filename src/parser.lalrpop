@@ -10,7 +10,7 @@ pub Module: ast::Module = {
     },
 };
 
-pub Knot: ast::Knot = {
+Knot: ast::Knot = {
     "==" <name:FuncName> <args:ArgList?> ";" <body:Statement*> => ast::Knot {
         name: name,
         args: args.unwrap_or_else(|| vec![]),
@@ -45,7 +45,7 @@ Statement: ast::Stmt = {
 
     <Expr> "<-" <Expr> ";" => ast::Stmt::SendMsg(<>),
 
-    "->" <f:FunCall> => ast::Stmt::TailCall(f.0, f.1),
+    "->" <f:FunCall> ";" => ast::Stmt::TailCall(f.0, f.1),
 
     "spawn" <f:FunCall> ";" => {
         ast::Stmt::LetSpawn(ast::Expr::Hole, f.0, f.1)
@@ -76,7 +76,7 @@ Choice: ast::Choice = {
 
 #[inline]
 ChoiceGuard: ast::Expr = {
-    <g:("if" <Expr> "then")?> => g.unwrap_or_else(|| ast::Expr::lit_true())
+    <g:("if" <Expr> "then")?> => g.unwrap_or_else(|| ast::Expr::from(true))
 };
 
 Trap: ast::Trap = {
@@ -95,7 +95,7 @@ TrapSrc: ast::Expr = {
 
 #[inline]
 TrapGuard: ast::Expr = {
-    <g:("when" <Expr>)?> => g.unwrap_or_else(|| ast::Expr::lit_true())
+    <g:("when" <Expr>)?> => g.unwrap_or_else(|| ast::Expr::from(true))
 };
 
 Comma<T>: Vec<T> = {

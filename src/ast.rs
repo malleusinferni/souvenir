@@ -1,26 +1,24 @@
-//use std::fmt::{Debug, Formatter, Error};
-
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq)]
 pub struct Module {
     pub globals: Vec<Stmt>,
     pub knots: Vec<Knot>,
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq)]
 pub struct Knot {
     pub name: Label,
     pub args: Vec<Expr>,
     pub body: Vec<Stmt>,
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq)]
 pub struct Choice {
     pub guard: Expr,
     pub title: Expr,
     pub body: Vec<Stmt>,
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq)]
 pub struct Trap {
     pub pattern: Expr,
     pub guard: Expr,
@@ -28,7 +26,7 @@ pub struct Trap {
     pub body: Vec<Stmt>,
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq)]
 pub enum Stmt {
     Empty,
     Disarm(Label),
@@ -56,7 +54,7 @@ pub struct Modpath(pub Vec<String>);
 #[derive(Copy, Clone, Debug, Eq, PartialEq)]
 pub struct ActorID(pub u32);
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq)]
 pub enum Expr {
     Hole,
     Actor(ActorID),
@@ -70,7 +68,7 @@ pub enum Expr {
     Binop(Box<Expr>, Binop, Box<Expr>),
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq)]
 pub enum Binop {
     Roll,
     Add,
@@ -80,25 +78,23 @@ pub enum Binop {
     Eql,
 }
 
-impl<'input> Into<Label> for Option<&'input str> {
-    fn into(self) -> Label {
-        match self {
+impl<'a> From<Option<&'a str>> for Label {
+    fn from(input: Option<&'a str>) -> Self {
+        match input {
             None => Label::Anonymous,
             Some(s) => Label::Local(s.to_owned()),
         }
     }
 }
 
-impl Expr {
-    pub fn lit_true() -> Self {
-        Expr::Int(1)
+impl From<bool> for Expr {
+    fn from(b: bool) -> Self {
+        if b { Expr::Int(1) } else { Expr::Int(0) }
     }
+}
 
-    pub fn lit_false() -> Self {
-        Expr::Int(0)
-    }
-
-    pub fn lit_string(input: &str) -> Self {
-        Expr::Str(input.to_owned())
+impl<'a> From<&'a str> for Expr {
+    fn from(s: &'a str) -> Self {
+        Expr::Str(s.to_owned())
     }
 }
