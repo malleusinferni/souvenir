@@ -1,0 +1,85 @@
+use std::collections::HashMap;
+
+use ast::*;
+use ast::visit::*;
+
+use driver::{Try, BuildErr, ErrCtx, BuildErrWithCtx};
+
+struct VarDef {
+    uses: usize,
+}
+
+struct Scope {
+    bindings: HashMap<String, VarDef>,
+}
+
+struct Pass {
+    env: Vec<Scope>,
+    context: ErrCtx,
+    errors: Vec<BuildErrWithCtx>,
+    shadowed: Vec<String>,
+}
+
+impl Pass {
+    fn enter(&mut self) {
+        self.env.push(Scope { bindings: HashMap::new(), });
+    }
+
+    fn leave(&mut self) -> Try<()> {
+        match self.env.pop() {
+            Some(_) => Ok(()),
+            None => ice!("Scope underflow"),
+        }
+    }
+
+    fn assign(&mut self, name: &str) -> Try<()> {
+        let previous = {
+            let scope = match self.env.iter_mut().last() {
+                Some(s) => s,
+                None => ice!("Assignment outside valid scope"),
+            };
+
+            scope.bindings.insert(name.to_owned(), VarDef {
+                uses: 0,
+            })
+        };
+
+        match previous {
+            Some(ref def) if def.uses < 1 => {
+                self.shadowed.push(name.to_owned());
+            },
+
+            _ => ()
+        }
+
+        Ok(())
+    }
+
+    fn eval(&mut self, name: &str) -> Try<()> {
+        for scope in self.env.iter_mut().rev() {
+            if let Some(def) = scope.bindings.get_mut(name) {
+                def.uses += 1;
+            }
+        }
+
+        self.errors.push(BuildErr::NoSuchVar(name.to_owned()).with_ctx({
+            &self.context
+        }));
+
+        Ok(())
+    }
+}
+
+impl Visitor for Pass {
+    fn error_context(&mut self) -> &mut ErrCtx {
+        &mut self.context
+    }
+
+    fn visit_ident(&mut self, t: &Ident) -> Try<()> {
+        unimplemented!()
+    }
+
+    fn visit_block(&mut self, t: &Block) -> Try<()> {
+        unimplemented!()
+    }
+}

@@ -229,6 +229,12 @@ impl ErrCtx {
     }
 }
 
+impl BuildErr {
+    pub fn with_ctx(self, ctx: &ErrCtx) -> BuildErrWithCtx {
+        BuildErrWithCtx(self, ctx.clone())
+    }
+}
+
 impl From<io::Error> for LoadErr {
     fn from(err: io::Error) -> Self {
         LoadErr::Io(err)
