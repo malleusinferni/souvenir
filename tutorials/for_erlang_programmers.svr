@@ -1,0 +1,24 @@
+== start
+
+let CodePrinter = spawn actor:code_printer
+
+> If you're familiar with Erlang, you're on a roll, because Souvenir gives you
+> a similar environment: Zillions of actors (processes), with isolated memory
+> spaces, communicating via message passing. However, there are a few crucial
+> differences to watch out for.
+
+> First of all, functional programming idioms are much more limited than what
+> you're used to. Global functions (\b{scenes}) and lambdas (\b{traps}) live in
+> a separate namespace from other values, so they can't be passed as arguments
+> or assigned to variables, and they can't be sent to other processes.
+
+> You can't pass arguments to a trap/lambda, so you can't invoke it explicitly.
+> (You \i{can} wait for it to be invoked; more on that later.) Only \b{scenes}
+> can be explicitly invoked with arguments, and all such invocations must be
+> tail-recursive.
+
+> Second, messages are delivered using an interrupt model. Each actor declares
+> its own message-handling capabilities by installing a trap as an interrupt
+> handler. Multiple messages sent to the same process will wait in a queue
+> (only one handler may run at a time) but if a message gets to the front of
+> the queue and no suitable handler is found, it is silently discarded.

@@ -1,0 +1,76 @@
+== start
+
+> Hi there. Welcome to the Souvenir demo script.
+
+> Let's print some text. Souvenir organizes lines of text into "strings." A
+> string starts with ">" and continues to the end of the line. Writing a string
+> by itself causes it to be printed when that part of the script is performed.
+
+> Souvenir has its own special notion of multi-line strings: Text split across
+> adjacent strings is automatically reflowed into a single paragraph that gets
+> printed all at once. You can separate paragraphs manually by inserting blank
+> lines between them.
+
+> Let's go ahead and change scenes...
+
+-> actor_demo
+
+-- By the way, this is a comment. It's like a note left by the script writer
+-- for other human readers. Souvenir pretends it's an ordinary blank line and
+-- will never print the text inside it.
+
+== actor_demo
+
+> All right, we've just arrived in the new scene.
+
+> Souvenir scripts are performed by "actors," which can be visible characters
+> in a game, or invisible workers that perform some task in the background. For
+> now, let's imagine all actors are visible.
+
+let Sue = spawn actor:puppet(#sue)
+
+> Actors exist to perform scenes. A Souvenir script can have many actors doing
+> different things all at once. However, this is a simple scene, so we'll just
+> tell Sue what to do, one thing at a time.
+
+Sue > Hello!
+
+> Actors behave differently depending on what scene they're performing. In this
+> case, Sue is performing the "puppet" scene, so writing her name before a line
+> will tell her to repeat that line.
+
+Sue > I go to the gym five times a day. I can beat up everybody here!
+
+> We communicate with actors by sending them messages. Writing an actor's name
+> before a message is shorthand for sending the actor a message.
+
+Sue <- #backflip
+
+> Now, we're about to leave this scene, so we'll tell Sue to take a hike.
+
+Sue <- #bye
+
+-- TODO: More examples
+
+== message_demo
+
+trap 'handler
+| #ok
+    > Received "#ok"
+| #error, #out_of_memory
+    > Received "#error, #out_of_memory"
+    -> out_of_memory
+| #error, _
+    > Received "#error" and ignored the second part because we don't care
+;;
+
+> For the rest of this scene, messages sent to this actor will automatically
+> pause execution while 'handler decides what to do with them.
+
+Self <- #ok
+
+== out_of_memory
+
+-- Looks like we ran out of memory.
+
+Self <- #error, #ignored
