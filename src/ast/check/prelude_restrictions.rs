@@ -41,4 +41,18 @@ impl Visitor for Pass {
 
         Ok(())
     }
+
+    fn visit_ident(&mut self, t: &Ident) -> Try<()> {
+        if let &ErrCtx::Local(_, _) = &self.context {
+            return Ok(());
+        }
+
+        if let &Ident::PidOfSelf = t {
+            self.errors.push(BuildErrWithCtx({
+                BuildErr::SelfInPrelude
+            }, self.context.clone()));
+        }
+
+        Ok(())
+    }
 }

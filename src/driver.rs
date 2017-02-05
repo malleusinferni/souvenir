@@ -52,6 +52,7 @@ pub enum BuildErr {
     KnotWasRedefined(ast::QfdFnName),
     KnotWasOverqualified(ast::FnName),
     IoInPrelude,
+    SelfInPrelude,
     LabelInPrelude(ast::Label),
     LabelRedefined(ast::Label),
     WrongNumberOfArgs {

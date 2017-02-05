@@ -239,6 +239,10 @@ impl Display for BuildErrWithCtx {
                 writeln!(f, "IO not allowed in module prelude")?;
             },
 
+            &BuildErr::SelfInPrelude => {
+                writeln!(f, "Special variable Self cannot be used in prelude")?;
+            },
+
             &BuildErr::LabelInPrelude(ref _label) => {
                 writeln!(f, "Traps not allowed in module prelude")?;
             },
