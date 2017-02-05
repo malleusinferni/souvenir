@@ -1,0 +1,7 @@
+listen
+| _
+    > This prelude tries to perform IO, and won't compile.
+;;
+
+== start
+> Wow! How did we get here?

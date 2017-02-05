@@ -135,6 +135,7 @@ impl Program {
 
     pub fn compile(self) -> Result<Self, CompileErr> {
         self.check_names()?;
+        self.check_prelude_restrictions()?;
         Ok(self)
     }
 }
@@ -252,31 +253,6 @@ impl From<String> for LoadErr {
     }
 }
 
-impl fmt::Display for LoadErr {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        match self {
-            &LoadErr::Description(ref s) => write!(f, "{}", s),
-            &LoadErr::Parse(ref s) => write!(f, "{}", s),
-
-            &LoadErr::Io(ref err) => {
-                write!(f, "{}", err.description())
-            },
-
-            &LoadErr::PathIsNotLoadable(ref path) => {
-                write!(f, "Couldn't find modules in {}", path)
-            },
-
-            &LoadErr::ModpathIsNotUnicode(ref path) => {
-                write!(f, "Unable to decode {:?}", path)
-            },
-
-            &LoadErr::ModpathIsNotValid(ref path) => {
-                write!(f, "{:?} is not a valid module path", path)
-            },
-        }
-    }
-}
-
 impl From<LoadErr> for CompileErr {
     fn from(err: LoadErr) -> Self {
         CompileErr::Load(err)
@@ -292,71 +268,5 @@ impl From<ICE> for CompileErr {
 impl From<Vec<BuildErrWithCtx>> for CompileErr {
     fn from(errs: Vec<BuildErrWithCtx>) -> Self {
         CompileErr::BuildErrs(errs)
-    }
-}
-
-impl fmt::Display for CompileErr {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        match self {
-            &CompileErr::Internal(ICE(ref ice)) => write!(f, "{}", ice),
-
-            &CompileErr::Load(ref err) => write!(f, "{}", err),
-
-            &CompileErr::BuildErrs(ref errs) => {
-                for err in errs.iter() {
-                    writeln!(f, "{}", err)?;
-                }
-
-                Ok(())
-            },
-        }
-    }
-}
-
-impl fmt::Display for BuildErrWithCtx {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        let &BuildErrWithCtx(ref cause, ref ctx) = self;
-
-        match cause {
-            &BuildErr::KnotWasOverqualified(ref name) => {
-                writeln!(f, "Knot names shouldn't be qualified in their definitions:")?;
-                write!(f, "{}", name.in_module.as_ref().unwrap())?;
-            },
-
-            &BuildErr::NoSuchModule(ref path) => {
-                write!(f, "The module {} was not found.", path)?;
-            },
-
-            &BuildErr::NoSuchKnot(ref name) => {
-                write!(f, "The knot {:?} was not found in the module {}.", &name.name, name.in_module)?;
-            },
-
-            &BuildErr::WrongNumberOfArgs { ref fncall, ref wanted, ref got } => {
-                writeln!(f, "In the expression:\n{:?}", fncall)?;
-                write!(f, "The function {} needs {} args, but was called with {}", &fncall.0.name, wanted, got)?;
-            },
-
-            &BuildErr::InvalidNumber(ref s) => {
-                write!(f, "The number {} could not be parsed", s)?;
-            },
-
-            &BuildErr::IoInPrelude => {
-                writeln!(f, "Not allowed in module prelude:")?;
-                write!(f, "{:#?}", ctx)?;
-            },
-
-            &BuildErr::LabelInPrelude(ref label) => {
-                writeln!(f, "Not allowed in module prelude:")?;
-                write!(f, "{:#?}", ctx)?;
-            },
-
-            e => write!(f, "Can't describe this error yet: {:?}", e)?,
-        };
-
-        match ctx {
-            _ => (),
-        };
-
-        Ok(())
     }
 }
