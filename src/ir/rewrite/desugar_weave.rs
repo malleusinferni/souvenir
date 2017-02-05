@@ -10,8 +10,8 @@ impl Rewriter for Pass {
 
         for (i, arm) in a.into_iter().enumerate() {
             let (test, tag) = match arm.guard {
-                Expr::Atom(Atom::LastResort) => {
-                    (Expr::Int(1), Expr::Atom(Atom::LastResort))
+                Cond::LastResort => {
+                    (Cond::True, Expr::Atom(Atom::LastResort))
                 },
 
                 test => (test, Expr::Int(i as i32)),
@@ -36,7 +36,7 @@ impl Rewriter for Pass {
             arms.push(TrapArm {
                 pattern: Pat::EqualTo(message),
                 sender: Pat::EqualTo(Expr::PidZero),
-                guard: Expr::Int(1),
+                guard: Cond::True,
                 body: arm.body,
             });
         }

@@ -62,7 +62,7 @@ pub trait Rewriter {
             },
 
             Stmt::If { test, success, failure } => Stmt::If {
-                test: self.rw_expr(test)?,
+                test: self.rw_cond(test)?,
                 success: self.rw_scope(success)?,
                 failure: self.rw_scope(failure)?,
             },
@@ -123,7 +123,7 @@ pub trait Rewriter {
                     Ok(TrapArm {
                         pattern: self.rw_pat(t.pattern)?,
                         sender: self.rw_pat(t.sender)?,
-                        guard: self.rw_expr(t.guard)?,
+                        guard: self.rw_cond(t.guard)?,
                         body: self.rw_scope(t.body)?,
                     })
                 })?,
@@ -138,7 +138,7 @@ pub trait Rewriter {
                 arms: each(t, |t| {
                     Ok(MatchArm {
                         pattern: self.rw_pat(t.pattern)?,
-                        guard: self.rw_expr(t.guard)?,
+                        guard: self.rw_cond(t.guard)?,
                         body: self.rw_scope(t.body)?,
                     })
                 })?,
@@ -168,7 +168,7 @@ pub trait Rewriter {
                     Ok(TrapArm {
                         pattern: self.rw_pat(t.pattern)?,
                         sender: self.rw_pat(t.sender)?,
-                        guard: self.rw_expr(t.guard)?,
+                        guard: self.rw_cond(t.guard)?,
                         body: self.rw_scope(t.body)?,
                     })
                 })?,
@@ -182,7 +182,7 @@ pub trait Rewriter {
                 label: self.rw_label(l)?,
                 arms: each(a, |t| {
                     Ok(WeaveArm {
-                        guard: self.rw_expr(t.guard)?,
+                        guard: self.rw_cond(t.guard)?,
                         message: self.rw_expr(t.message)?,
                         body: self.rw_scope(t.body)?,
                     })
@@ -212,9 +212,13 @@ pub trait Rewriter {
             Expr::Infinity => Expr::Infinity,
             Expr::FetchArgument => Expr::FetchArgument,
 
-            Expr::Var(v) => Expr::Var({
+            Expr::Var(v) => {
                 self.rw_var_eval(v)?
-            }),
+            },
+
+            Expr::Nth(list, n) => Expr::Nth({
+                Box::new(self.rw_expr(*list)?)
+            }, n),
 
             Expr::List(items) => Expr::List({
                 each(items, |t| self.rw_expr(t))?
@@ -230,6 +234,28 @@ pub trait Rewriter {
         })
     }
 
+    fn rw_cond(&mut self, t: Cond) -> Try<Cond> {
+        Ok(match t {
+            Cond::Not(t) => {
+                let t = self.rw_cond(*t)?;
+                Cond::Not(Box::new(t))
+            },
+
+            Cond::Equals(lhs, rhs) => {
+                let lhs = self.rw_expr(lhs)?;
+                let rhs = self.rw_expr(rhs)?;
+                Cond::Equals(lhs, rhs)
+            },
+
+            Cond::HasLength(list, length) => {
+                let list = self.rw_expr(list)?;
+                Cond::HasLength(list, length)
+            },
+
+            _ => unimplemented!(),
+        })
+    }
+
     fn rw_fncall(&mut self, t: FnCall) -> Try<FnCall> {
         Ok(FnCall {
             name: t.name,
@@ -237,8 +263,8 @@ pub trait Rewriter {
         })
     }
 
-    fn rw_var_eval(&mut self, t: Var) -> Try<Var> {
-        Ok(t)
+    fn rw_var_eval(&mut self, t: Var) -> Try<Expr> {
+        Ok(Expr::Var(t))
     }
 
     fn rw_var_assign(&mut self, t: Var) -> Try<Var> {
