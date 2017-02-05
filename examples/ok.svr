@@ -1,4 +1,4 @@
-== knot_name
+== scene_name
 weave 'foo
 | > Option 1
     -> dest1 -- Comment allowed here and ignored
@@ -9,10 +9,10 @@ weave 'foo
 ;;
 
 == dest1
-> dest1 is a real knot
+> dest1 is a real scene
 
 == dest2(A, B, C)
 > dest2 wants some arguments and we're not going to give them to it
 
 == dest_default
--> knot_name
+-> scene_name

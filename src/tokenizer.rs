@@ -39,7 +39,7 @@ pub enum Tok<'input> {
     KwWeave,
     KwWhen,
 
-    NmFunc(&'input str),
+    NmScene(&'input str),
     NmLabel(&'input str),
     NmMacro(&'input str),
     NmVar(&'input str),
@@ -62,7 +62,7 @@ pub enum Tok<'input> {
 
     Pipe,
     Hole,
-    Knot,
+    Scene,
     Divert,
 
     LParen,
@@ -186,7 +186,7 @@ impl<'input> Tokenizer<'input> {
                 '=' => match self.bump() {
                     Some((i1, '=')) => {
                         self.bump();
-                        Some(Ok((i0, Tok::Knot, i1 + 1)))
+                        Some(Ok((i0, Tok::Scene, i1 + 1)))
                     },
                     _ => {
                         Some(Ok((i0, Tok::OpAssign, i0 + 1)))
@@ -264,7 +264,7 @@ impl<'input> Tokenizer<'input> {
             } else if other.starts_with('\'') {
                 Tok::NmLabel(other)
             } else {
-                Tok::NmFunc(other)
+                Tok::NmScene(other)
             }
         };
 
@@ -342,11 +342,11 @@ fn quick_test() {
     let tokenizer = Tokenizer::new("== start\n(ok)#ok\n-- comment\n", 0);
 
     let expected = &[
-        Tok::Knot,
-        Tok::NmFunc("start"),
+        Tok::Scene,
+        Tok::NmScene("start"),
         Tok::EndLn,
         Tok::LParen,
-        Tok::NmFunc("ok"),
+        Tok::NmScene("ok"),
         Tok::RParen,
         Tok::LitAtom("#ok"),
         Tok::EndLn,

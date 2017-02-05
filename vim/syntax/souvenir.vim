@@ -21,16 +21,16 @@ syn keyword souvenirMatch trap given listen weave branch when if then
 syn keyword souvenirCommand let trace wait disarm spawn
 syn keyword souvenirKeyword from
 
-" Must come before KnotDef
+" Must come before SceneDef
 syn match souvenirEquals /=/
 
-syn match souvenirKnotDef /^==/ nextgroup=souvenirKnotName skipwhite
-syn match souvenirKnotName /\<\l\w*/ nextgroup=souvenirKnotArgs "contained
-syn region souvenirKnotArgs matchgroup=souvenirParen start=/(/ matchgroup=souvenirParen end=/)/ contained contains=souvenirAtom,souvenirNumber,souvenirVariableName
+syn match souvenirSceneDef /^==/ nextgroup=souvenirSceneName skipwhite
+syn match souvenirSceneName /\<\l\w*/ nextgroup=souvenirSceneArgs "contained
+syn region souvenirSceneArgs matchgroup=souvenirParen start=/(/ matchgroup=souvenirParen end=/)/ contained contains=souvenirAtom,souvenirNumber,souvenirVariableName
 
 syn match souvenirModName /\<\w\+:/he=e-1,me=e-1 nextgroup=souvenirModSep
-syn match souvenirModSep /\>:\</ nextgroup=souvenirKnotName
-syn match souvenirDivert /->/ nextgroup=souvenirKnotName,souvenirModName skipwhite
+syn match souvenirModSep /\>:\</ nextgroup=souvenirSceneName
+syn match souvenirDivert /->/ nextgroup=souvenirSceneName,souvenirModName skipwhite
 syn match souvenirLabel /'\l\w*/
 syn match souvenirMacro /?\u[A-Z0-9_]*/
 syn match souvenirAtom /#\l[a-z0-9_]*/
@@ -58,9 +58,9 @@ hi def link souvenirKeyword Keyword
 
 hi def link souvenirModName PreProc
 hi def link souvenirModSep Delimiter
-hi def link souvenirKnotDef PreProc
+hi def link souvenirSceneDef PreProc
 hi def link souvenirMacro Macro
-hi def link souvenirKnotName Function
+hi def link souvenirSceneName Function
 hi def link souvenirLabel Tag
 hi def link souvenirParen Delimiter
 hi def link souvenirTemplateMarker Delimiter

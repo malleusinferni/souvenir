@@ -14,12 +14,12 @@ pub trait Visitor {
     fn visit_module(&mut self, t: &Module, p: &Modpath) -> Try<()> {
         self.error_context().begin_module(p);
         each(&t.globals.0, |t| self.visit_stmt(t))?;
-        each(&t.knots, |t| self.visit_knot(t))
+        each(&t.scenes, |t| self.visit_scene(t))
     }
 
-    fn visit_knot(&mut self, t: &Knot) -> Try<()> {
-        self.error_context().begin_knot(&t.name.name)?;
-        self.visit_fnname(&t.name)?;
+    fn visit_scene(&mut self, t: &Scene) -> Try<()> {
+        self.error_context().begin_scene(&t.name.name)?;
+        self.visit_scene_name(&t.name)?;
         each(&t.args, |t| self.visit_ident(t))?;
         self.visit_block(&t.body)?;
         self.error_context().pop()
@@ -38,9 +38,9 @@ pub trait Visitor {
         self.visit_block(&t.body)
     }
 
-    fn visit_fncall(&mut self, t: &FnCall) -> Try<()> {
-        let &FnCall(ref name, ref args) = t;
-        self.visit_fnname(name)?;
+    fn visit_call(&mut self, t: &Call) -> Try<()> {
+        let &Call(ref name, ref args) = t;
+        self.visit_scene_name(name)?;
         each(args, |t| self.visit_expr(t))
     }
 
@@ -78,7 +78,7 @@ pub trait Visitor {
             },
 
             &Stmt::Recur { ref target } => {
-                self.visit_fncall(target)?;
+                self.visit_call(target)?;
             },
 
             &Stmt::SendMsg { ref target, ref message } => {
@@ -131,7 +131,7 @@ pub trait Visitor {
             },
 
             &Expr::Spawn(ref target) => {
-                self.visit_fncall(target)
+                self.visit_call(target)
             },
         }
     }
@@ -176,7 +176,7 @@ pub trait Visitor {
         Ok(())
     }
 
-    fn visit_fnname(&mut self, _t: &FnName) -> Try<()> {
+    fn visit_scene_name(&mut self, _t: &SceneName) -> Try<()> {
         Ok(())
     }
 

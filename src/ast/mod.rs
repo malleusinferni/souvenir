@@ -11,15 +11,15 @@ pub struct Program {
 #[derive(Clone, Debug, PartialEq)]
 pub struct Module {
     pub globals: Block,
-    pub knots: Vec<Knot>,
+    pub scenes: Vec<Scene>,
 }
 
 #[derive(Clone, Debug, PartialEq)]
 pub struct Block(pub Vec<Stmt>);
 
 #[derive(Clone, Debug, PartialEq)]
-pub struct Knot {
-    pub name: FnName,
+pub struct Scene {
+    pub name: SceneName,
     pub args: Vec<Ident>,
     pub body: Block,
 }
@@ -63,7 +63,7 @@ pub enum Stmt {
     },
 
     Recur {
-        target: FnCall,
+        target: Call,
     },
 
     SendMsg {
@@ -94,16 +94,16 @@ pub enum Stmt {
 pub struct Modpath(pub Vec<String>);
 
 #[derive(Clone, Debug, PartialEq)]
-pub struct FnCall(pub FnName, pub Vec<Expr>);
+pub struct Call(pub SceneName, pub Vec<Expr>);
 
 #[derive(Clone, Debug, PartialEq)]
-pub struct FnName {
+pub struct SceneName {
     pub name: String,
     pub in_module: Option<Modpath>,
 }
 
 #[derive(Clone, Debug, Eq, Hash, PartialEq)]
-pub struct QfdFnName {
+pub struct QfdSceneName {
     pub name: String,
     pub in_module: Modpath,
 }
@@ -111,7 +111,7 @@ pub struct QfdFnName {
 #[derive(Clone, Debug, Eq, Hash, PartialEq)]
 pub struct QfdLabel {
     pub name: String,
-    pub in_knot: QfdFnName,
+    pub in_scene: QfdSceneName,
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -141,7 +141,7 @@ pub enum Expr {
     Str(Str),
     Op(Op, Vec<Expr>),
     List(Vec<Expr>),
-    Spawn(FnCall),
+    Spawn(Call),
 }
 
 #[derive(Clone, Debug, PartialEq)]

@@ -5,15 +5,15 @@ use tokenizer::{Tok, TokErr};
 grammar<'input>(text: &'input str);
 
 pub Module: ast::Module = {
-    <b:Block> <k:Knot*> => ast::Module {
+    <b:Block> <s:Scene*> => ast::Module {
         globals: b,
-        knots: k,
+        scenes: s,
     },
 };
 
-Knot: ast::Knot = {
-    "==" <name:"NmFunc"> <args:ArgList?> ";" <body:Block> => ast::Knot {
-        name: ast::FnName {
+Scene: ast::Scene = {
+    "==" <name:"NmScene"> <args:ArgList?> ";" <body:Block> => ast::Scene {
+        name: ast::SceneName {
             name: name.to_string(),
             in_module: None,
         },
@@ -96,13 +96,13 @@ Statement: ast::Stmt = {
         }
     },
 
-    "->" <FnCall> ";" => {
+    "->" <Call> ";" => {
         ast::Stmt::Recur {
             target: <>,
         }
     },
 
-    <name:("let" <Ident> "=")?> "spawn" <target:FnCall> ";" => {
+    <name:("let" <Ident> "=")?> "spawn" <target:Call> ";" => {
         ast::Stmt::Let {
             name: name.unwrap_or_default(),
             value: ast::Expr::Spawn(target),
@@ -174,15 +174,15 @@ ArgList: Vec<ast::Ident> = {
     "(" <args:(Comma<Ident>)?> ")" => args.unwrap_or_default(),
 };
 
-FnCall: ast::FnCall = {
-    <name:FnName> <args:("(" <(Comma<Expr>)?> ")")?> => {
-        ast::FnCall(name, args.unwrap_or(None).unwrap_or(vec![]))
+Call: ast::Call = {
+    <name:SceneName> <args:("(" <(Comma<Expr>)?> ")")?> => {
+        ast::Call(name, args.unwrap_or(None).unwrap_or(vec![]))
     },
 };
 
-FnName: ast::FnName = {
-    <path:Modpath?> <name:"NmFunc"> => {
-        ast::FnName {
+SceneName: ast::SceneName = {
+    <path:Modpath?> <name:"NmScene"> => {
+        ast::SceneName {
             name: name.to_string(),
             in_module: path,
         }
@@ -209,7 +209,7 @@ Ident: ast::Ident = {
 
 #[inline]
 Modpath: ast::Modpath = {
-    <segments:(<"NmFunc"> ":")+> => {
+    <segments:(<"NmScene"> ":")+> => {
         ast::Modpath({
             segments.into_iter()
                 .map(|s| s.to_owned())
@@ -313,7 +313,7 @@ extern {
         "weave" => Tok::KwWeave,
         "when" => Tok::KwWhen,
 
-        "NmFunc" => Tok::NmFunc(<&'input str>),
+        "NmScene" => Tok::NmScene(<&'input str>),
         "NmLabel" => Tok::NmLabel(<&'input str>),
         "NmMacro" => Tok::NmMacro(<&'input str>),
         "NmVar" => Tok::NmVar(<&'input str>),
@@ -336,7 +336,7 @@ extern {
 
         "|" => Tok::Pipe,
         "_" => Tok::Hole,
-        "==" => Tok::Knot,
+        "==" => Tok::Scene,
         "->" => Tok::Divert,
 
         "(" => Tok::LParen,

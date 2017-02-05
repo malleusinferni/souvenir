@@ -23,22 +23,22 @@ impl Program {
     }
 }
 
-struct KnotDef {
+struct SceneDef {
     args_wanted: usize,
     times_called: usize,
 }
 
 struct Pass {
-    defs: HashMap<QfdFnName, KnotDef>,
+    defs: HashMap<QfdSceneName, SceneDef>,
     context: ErrCtx,
     errors: Vec<BuildErrWithCtx>,
 }
 
 impl Pass {
-    fn qualify(&self, knot_name: &FnName) -> Try<QfdFnName> {
-        Ok(QfdFnName {
-            name: knot_name.name.clone(),
-            in_module: match knot_name.in_module.as_ref() {
+    fn qualify(&self, scene: &SceneName) -> Try<QfdSceneName> {
+        Ok(QfdSceneName {
+            name: scene.name.clone(),
+            in_module: match scene.in_module.as_ref() {
                 Some(modpath) => modpath.clone(),
                 None => self.context.modpath()?,
             },
@@ -49,10 +49,10 @@ impl Pass {
         self.errors.push(BuildErrWithCtx(err, self.context.clone()));
     }
 
-    fn def_knot(&mut self, t: &Knot, modpath: &Modpath) -> Try<()> {
-        let &FnName { ref name, ref in_module } = &t.name;
+    fn def_scene(&mut self, t: &Scene, modpath: &Modpath) -> Try<()> {
+        let &SceneName { ref name, ref in_module } = &t.name;
 
-        let qualified = QfdFnName {
+        let qualified = QfdSceneName {
             name: name.clone(),
             in_module: modpath.clone(),
         };
@@ -60,13 +60,13 @@ impl Pass {
         self.context = ErrCtx::Local(qualified.clone(), vec![]);
 
         if in_module.is_some() {
-            self.push_err(BuildErr::KnotWasOverqualified(t.name.clone()));
+            self.push_err(BuildErr::SceneWasOverqualified(t.name.clone()));
         }
 
         if self.defs.contains_key(&qualified) {
-            self.push_err(BuildErr::KnotWasRedefined(qualified.clone()));
+            self.push_err(BuildErr::SceneWasRedefined(qualified.clone()));
         } else {
-            self.defs.insert(qualified, KnotDef {
+            self.defs.insert(qualified, SceneDef {
                 args_wanted: t.args.len(),
                 times_called: 0,
             });
@@ -82,10 +82,10 @@ impl Visitor for Pass {
     }
 
     fn visit_program(&mut self, t: &Program) -> Try<()> {
-        // Stage 1: Collect knot names
+        // Stage 1: Collect scene names
         for &(ref modpath, ref module) in t.modules.iter() {
-            for knot in module.knots.iter() {
-                self.def_knot(knot, modpath)?;
+            for scene in module.scenes.iter() {
+                self.def_scene(scene, modpath)?;
             }
         }
 
@@ -97,8 +97,8 @@ impl Visitor for Pass {
         Ok(())
     }
 
-    fn visit_fncall(&mut self, t: &FnCall) -> Try<()> {
-        let &FnCall(ref name, ref args) = t;
+    fn visit_call(&mut self, t: &Call) -> Try<()> {
+        let &Call(ref name, ref args) = t;
         let qualified = self.qualify(name)?;
 
         let err = match self.defs.get_mut(&qualified) {
@@ -106,7 +106,7 @@ impl Visitor for Pass {
                 def.times_called += 1;
                 if args.len() != def.args_wanted {
                     Some(BuildErr::WrongNumberOfArgs {
-                        fncall: t.clone(),
+                        call: t.clone(),
                         wanted: def.args_wanted,
                         got: args.len(),
                     })
@@ -114,7 +114,7 @@ impl Visitor for Pass {
                     None
                 }
             },
-            None => { Some(BuildErr::NoSuchKnot(qualified.clone())) },
+            None => { Some(BuildErr::NoSuchScene(qualified.clone())) },
         };
 
         if let Some(err) = err {

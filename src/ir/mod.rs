@@ -4,11 +4,11 @@ pub mod pretty_print;
 #[derive(Clone, Debug, Default, PartialEq)]
 pub struct Program {
     pub preludes: Vec<Scope>,
-    pub knots: Vec<KnotDef>,
+    pub scenes: Vec<SceneDef>,
 }
 
 #[derive(Clone, Debug, PartialEq)]
-pub struct KnotDef {
+pub struct SceneDef {
     pub prelude_id: usize,
     pub args_wanted: u32,
     pub body: Scope,
@@ -116,7 +116,7 @@ pub enum Stmt {
     },
 
     Recur {
-        target: FnCall,
+        target: Call,
     },
 
     Return {
@@ -144,7 +144,7 @@ pub enum Expr {
     Int(i32),
     List(Vec<Expr>),
     Nth(Box<Expr>, u32),
-    Spawn(FnCall),
+    Spawn(Call),
     Strcat(Vec<Expr>),
     Strlit(String),
     FetchArgument,
@@ -184,8 +184,8 @@ pub enum Atom {
 }
 
 #[derive(Clone, Debug, PartialEq)]
-pub struct FnCall {
-    pub name: FnId,
+pub struct Call {
+    pub name: SceneId,
     pub args: Vec<Expr>,
 }
 
@@ -206,7 +206,7 @@ pub enum Var {
 }
 
 #[derive(Copy, Clone, Debug, PartialEq)]
-pub struct FnId(pub u32);
+pub struct SceneId(pub u32);
 
 impl From<Vec<Stmt>> for Scope {
     fn from(body: Vec<Stmt>) -> Self {

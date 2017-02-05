@@ -23,7 +23,7 @@ pub enum CompileErr {
 #[derive(Clone, Debug)]
 pub enum ErrCtx {
     Global(Modpath, Vec<ast::Stmt>),
-    Local(ast::QfdFnName, Vec<ast::Stmt>),
+    Local(ast::QfdSceneName, Vec<ast::Stmt>),
     NoContext,
 }
 
@@ -43,20 +43,20 @@ pub enum LoadErr {
 #[derive(Clone, Debug)]
 pub enum BuildErr {
     NoSuchModule(Modpath),
-    NoSuchKnot(ast::QfdFnName),
+    NoSuchScene(ast::QfdSceneName),
     NoSuchLabel(ast::Label),
     NoSuchVar(String),
     InvalidNumber(String),
     InvalidAssignToSelf(ast::Stmt),
     InvalidAssignToHole(ast::Stmt),
-    KnotWasRedefined(ast::QfdFnName),
-    KnotWasOverqualified(ast::FnName),
+    SceneWasRedefined(ast::QfdSceneName),
+    SceneWasOverqualified(ast::SceneName),
     IoInPrelude,
     SelfInPrelude,
     LabelInPrelude(ast::Label),
     LabelRedefined(ast::Label),
     WrongNumberOfArgs {
-        fncall: ast::FnCall,
+        call: ast::Call,
         wanted: usize,
         got: usize,
     },
@@ -174,10 +174,10 @@ impl ErrCtx {
                 }
             },
 
-            ErrCtx::Local(knot_name, mut stack) => {
+            ErrCtx::Local(scene, mut stack) => {
                 match stack.pop() {
-                    Some(_) => ErrCtx::Local(knot_name, stack),
-                    None => ErrCtx::Global(knot_name.in_module, vec![]),
+                    Some(_) => ErrCtx::Local(scene, stack),
+                    None => ErrCtx::Global(scene.in_module, vec![]),
                 }
             },
 
@@ -190,7 +190,7 @@ impl ErrCtx {
     pub fn modpath(&self) -> Try<Modpath> {
         match self {
             &ErrCtx::Global(ref path, _) => Ok(path.clone()),
-            &ErrCtx::Local(ast::QfdFnName { ref in_module, .. }, _) => {
+            &ErrCtx::Local(ast::QfdSceneName { ref in_module, .. }, _) => {
                 Ok(in_module.clone())
             },
             _ => ice!("No module path in error context"),
@@ -201,13 +201,13 @@ impl ErrCtx {
         *self = ErrCtx::Global(path.clone(), vec![]);
     }
 
-    pub fn begin_knot(&mut self, name: &str) -> Try<()> {
-        let fn_name = ast::QfdFnName {
+    pub fn begin_scene(&mut self, name: &str) -> Try<()> {
+        let qualified = ast::QfdSceneName {
             name: name.to_owned(),
             in_module: self.modpath()?,
         };
 
-        *self = ErrCtx::Local(fn_name, vec![]);
+        *self = ErrCtx::Local(qualified, vec![]);
 
         Ok(())
     }

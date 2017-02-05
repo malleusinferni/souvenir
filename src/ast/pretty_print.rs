@@ -113,9 +113,9 @@ impl Display for ast::Pat {
     }
 }
 
-impl Display for ast::FnName {
+impl Display for ast::SceneName {
     fn fmt(&self, f: &mut Formatter) -> Result {
-        let &ast::FnName { ref name, ref in_module } = self;
+        let &ast::SceneName { ref name, ref in_module } = self;
 
         match in_module.as_ref() {
             Some(path) => write!(f, "{}:{}", path, name),
@@ -124,16 +124,16 @@ impl Display for ast::FnName {
     }
 }
 
-impl Display for ast::QfdFnName {
+impl Display for ast::QfdSceneName {
     fn fmt(&self, f: &mut Formatter) -> Result {
-        let &ast::QfdFnName { ref name, ref in_module } = self;
+        let &ast::QfdSceneName { ref name, ref in_module } = self;
         write!(f, "{}:{}", in_module, name)
     }
 }
 
-impl Display for ast::FnCall {
+impl Display for ast::Call {
     fn fmt(&self, f: &mut Formatter) -> Result {
-        let &ast::FnCall(ref name, ref args) = self;
+        let &ast::Call(ref name, ref args) = self;
 
         let args = args.iter()
             .map(|expr| format!("{}", expr))
@@ -213,8 +213,8 @@ impl Display for BuildErrWithCtx {
         let &BuildErrWithCtx(ref cause, ref ctx) = self;
 
         match cause {
-            &BuildErr::KnotWasOverqualified(ref name) => {
-                writeln!(f, "Knot names shouldn't be qualified in their definitions:")?;
+            &BuildErr::SceneWasOverqualified(ref name) => {
+                writeln!(f, "Scene names shouldn't be qualified in their definitions:")?;
                 write!(f, "{}", name.in_module.as_ref().unwrap())?;
             },
 
@@ -222,13 +222,13 @@ impl Display for BuildErrWithCtx {
                 write!(f, "The module {} was not found.", path)?;
             },
 
-            &BuildErr::NoSuchKnot(ref name) => {
-                write!(f, "The knot {:?} was not found in the module {}.", &name.name, name.in_module)?;
+            &BuildErr::NoSuchScene(ref name) => {
+                write!(f, "The scene {:?} was not found in the module {}.", &name.name, name.in_module)?;
             },
 
-            &BuildErr::WrongNumberOfArgs { ref fncall, ref wanted, ref got } => {
-                writeln!(f, "In the expression:\n{}", fncall)?;
-                write!(f, "The function {} needs {} args, but was called with {}", &fncall.0.name, wanted, got)?;
+            &BuildErr::WrongNumberOfArgs { ref call, ref wanted, ref got } => {
+                writeln!(f, "In the expression:\n{}", call)?;
+                write!(f, "The function {} needs {} args, but was called with {}", &call.0.name, wanted, got)?;
             },
 
             &BuildErr::InvalidNumber(ref s) => {
@@ -263,8 +263,8 @@ impl Display for ErrCtx {
 
             },
 
-            &ErrCtx::Local(ref func_name, ref stack) => {
-                writeln!(f, "  In the definition of knot {}", func_name)?;
+            &ErrCtx::Local(ref scene_name, ref stack) => {
+                writeln!(f, "  In the definition of scene {}", scene_name)?;
                 stack
             },
 

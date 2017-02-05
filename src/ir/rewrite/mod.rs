@@ -23,8 +23,8 @@ pub trait Rewriter {
         Ok(t)
     }
 
-    fn rw_knot(&mut self, t: KnotDef) -> Try<KnotDef> {
-        Ok(KnotDef {
+    fn rw_scene(&mut self, t: SceneDef) -> Try<SceneDef> {
+        Ok(SceneDef {
             prelude_id: t.prelude_id,
             args_wanted: t.args_wanted,
             body: self.rw_scope(t.body)?,
@@ -73,7 +73,7 @@ pub trait Rewriter {
             },
 
             Stmt::Recur { target } => Stmt::Recur {
-                target: self.rw_fncall(target)?,
+                target: self.rw_call(target)?,
             },
 
             Stmt::Return { result } => Stmt::Return {
@@ -228,8 +228,8 @@ pub trait Rewriter {
                 each(items, |t| self.rw_expr(t))?
             }),
 
-            Expr::Spawn(fncall) => Expr::Spawn({
-                self.rw_fncall(fncall)?
+            Expr::Spawn(call) => Expr::Spawn({
+                self.rw_call(call)?
             }),
         })
     }
@@ -256,8 +256,8 @@ pub trait Rewriter {
         })
     }
 
-    fn rw_fncall(&mut self, t: FnCall) -> Try<FnCall> {
-        Ok(FnCall {
+    fn rw_call(&mut self, t: Call) -> Try<Call> {
+        Ok(Call {
             name: t.name,
             args: each(t.args, |t| self.rw_expr(t))?,
         })

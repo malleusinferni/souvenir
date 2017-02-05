@@ -46,7 +46,7 @@ impl Display for Expr {
             &Expr::Nth(ref list, n) => {
                 write!(f, "({})[{}]", list, n)
             },
-            &Expr::Spawn(ref fncall) => write!(f, "spawn {}", fncall),
+            &Expr::Spawn(ref call) => write!(f, "spawn {}", call),
             &Expr::Strcat(ref items) => write!(f, "{:?}", strcat(items)),
             &Expr::Strlit(ref s) => write!(f, "> {}", s),
             &Expr::PidOfSelf => write!(f, "Self"),
@@ -93,9 +93,9 @@ impl Display for Cond {
     }
 }
 
-impl Display for FnCall {
+impl Display for Call {
     fn fmt(&self, f: &mut Formatter) -> Result<(), Error> {
-        let &FnCall { name: FnId(id), ref args } = self;
+        let &Call { name: SceneId(id), ref args } = self;
         write!(f, ":{}: (", id)?;
         args.pp_slice(f)?;
         write!(f, ")")
