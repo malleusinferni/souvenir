@@ -1,6 +1,6 @@
 use ast;
 
-use tokenizer::{Tok, TokErr};
+use ast::tokens::{Tok, TokErr};
 
 grammar<'input>(text: &'input str);
 

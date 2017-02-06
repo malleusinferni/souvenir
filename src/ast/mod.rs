@@ -1,3 +1,5 @@
+pub mod tokens;
+pub mod grammar;
 pub mod visit;
 pub mod check;
 //pub mod translate;
@@ -187,7 +189,7 @@ pub enum Op {
 
 use lalrpop_util::ParseError;
 
-use tokenizer::*;
+use ast::tokens::*;
 
 pub type ParseErr<'a> = ParseError<usize, Tok<'a>, TokErr>;
 
@@ -195,7 +197,7 @@ impl Module {
     pub fn parse(source: &str) -> Result<Self, ParseErr> {
         let tokens = Tokenizer::new(source, 0);
 
-        ::parser::parse_Module(source, tokens)
+        grammar::parse_Module(source, tokens)
     }
 }
 

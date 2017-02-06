@@ -3,13 +3,8 @@ extern crate lalrpop_util;
 
 #[macro_use]
 pub mod driver;
-
 pub mod ast;
-pub mod parser;
-pub mod tokenizer;
-
 pub mod ir;
-
 pub mod vm;
 
 #[test]
