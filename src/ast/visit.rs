@@ -59,6 +59,10 @@ pub trait Visitor {
                 self.visit_label(target)?;
             },
 
+            &Stmt::Discard { ref value } => {
+                self.visit_expr(value)?;
+            },
+
             &Stmt::Let { ref value, ref name } => {
                 self.visit_expr(value)?;
                 self.visit_ident(name)?;
@@ -142,27 +146,7 @@ pub trait Visitor {
             &Cond::False => (),
             &Cond::LastResort => (),
 
-            &Cond::Eql(ref lhs, ref rhs) => {
-                self.visit_expr(lhs)?;
-                self.visit_expr(rhs)?;
-            },
-
-            &Cond::Lt(ref lhs, ref rhs) => {
-                self.visit_expr(lhs)?;
-                self.visit_expr(rhs)?;
-            },
-
-            &Cond::Gt(ref lhs, ref rhs) => {
-                self.visit_expr(lhs)?;
-                self.visit_expr(rhs)?;
-            },
-
-            &Cond::Lte(ref lhs, ref rhs) => {
-                self.visit_expr(lhs)?;
-                self.visit_expr(rhs)?;
-            },
-
-            &Cond::Gte(ref lhs, ref rhs) => {
+            &Cond::Compare(ref op, ref lhs, ref rhs) => {
                 self.visit_expr(lhs)?;
                 self.visit_expr(rhs)?;
             },
@@ -175,6 +159,8 @@ pub trait Visitor {
 
     fn visit_pattern(&mut self, t: &Pat) -> Try<()> {
         match t {
+            &Pat::Hole => Ok(()),
+
             &Pat::Id(ref ident) => {
                 self.visit_ident(ident)
             },

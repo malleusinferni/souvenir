@@ -69,6 +69,12 @@ Statement: ast::Stmt = {
         }
     },
 
+    "let" "_" "=" <value:Expr> ";" => {
+        ast::Stmt::Discard {
+            value: value,
+        }
+    },
+
     "wait" <Expr> ";" => {
         ast::Stmt::Wait {
             value: <>,
@@ -103,9 +109,15 @@ Statement: ast::Stmt = {
     },
 
     <name:("let" <Ident> "=")?> "spawn" <target:Call> ";" => {
-        ast::Stmt::Let {
-            name: name.unwrap_or_default(),
-            value: ast::Expr::Spawn(target),
+        match name {
+            Some(id) => ast::Stmt::Let {
+                name: id,
+                value: ast::Expr::Spawn(target),
+            },
+
+            None => ast::Stmt::Discard {
+                value: ast::Expr::Spawn(target),
+            },
         }
     },
 };
@@ -151,7 +163,7 @@ TrapArm: ast::TrapArm = {
 #[inline]
 TrapSender: ast::Pat = {
     <sender:("from" <Ident>)?> => {
-        ast::Pat::Id(sender.unwrap_or_default())
+        sender.map(|id| ast::Pat::Id(id)).unwrap_or_default()
     }
 };
 
@@ -203,8 +215,6 @@ Ident: ast::Ident = {
             name: name.to_string()
         },
     },
-
-    "_" => ast::Ident::Hole,
 };
 
 #[inline]
@@ -219,6 +229,8 @@ Modpath: ast::Modpath = {
 };
 
 Pat: ast::Pat = {
+    "_" => ast::Pat::Hole,
+
     <Ident> => ast::Pat::Id(<>),
 
     <Literal> => ast::Pat::Lit(<>),
@@ -230,7 +242,7 @@ Pat: ast::Pat = {
 
 Cond: ast::Cond = {
     // FIXME: More operators
-    <Expr> "==" <Expr> => ast::Cond::Eql(<>),
+    <Expr> "==" <Expr> => ast::Cond::Compare(ast::BoolOp::Eql, <>),
 };
 
 Expr: ast::Expr = {

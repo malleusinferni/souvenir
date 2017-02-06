@@ -49,6 +49,10 @@ pub enum Stmt {
         target: Label,
     },
 
+    Discard {
+        value: Expr,
+    },
+
     Let {
         value: Expr,
         name: Ident,
@@ -131,8 +135,6 @@ pub enum Ident {
         name: String,
     },
 
-    Hole,
-
     PidOfSelf,
 }
 
@@ -151,16 +153,13 @@ pub enum Cond {
     True,
     False,
     LastResort,
-    Eql(Expr, Expr),
-    Lt(Expr, Expr),
-    Gt(Expr, Expr),
-    Lte(Expr, Expr),
-    Gte(Expr, Expr),
+    Compare(BoolOp, Expr, Expr),
     Not(Box<Cond>),
 }
 
 #[derive(Clone, Debug, PartialEq)]
 pub enum Pat {
+    Hole,
     Id(Ident),
     Lit(Lit),
     List(Vec<Pat>),
@@ -187,6 +186,15 @@ pub enum Op {
     Roll,
 }
 
+#[derive(Clone, Debug, PartialEq)]
+pub enum BoolOp {
+    Eql,
+    Gt,
+    Lt,
+    Gte,
+    Lte,
+}
+
 use lalrpop_util::ParseError;
 
 use ast::tokens::*;
@@ -201,9 +209,9 @@ impl Module {
     }
 }
 
-impl Default for Ident {
+impl Default for Pat {
     fn default() -> Self {
-        Ident::Hole
+        Pat::Hole
     }
 }
 

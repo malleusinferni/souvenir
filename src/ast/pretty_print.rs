@@ -21,7 +21,6 @@ impl Display for ast::Ident {
     fn fmt(&self, f: &mut Formatter) -> Result {
         match self {
             &ast::Ident::Var { ref name } => write!(f, "{}", name),
-            &ast::Ident::Hole => write!(f, "_"),
             &ast::Ident::PidOfSelf => write!(f, "Self"),
         }
     }
@@ -110,6 +109,8 @@ impl Display for ast::Lit {
 impl Display for ast::Pat {
     fn fmt(&self, f: &mut Formatter) -> Result {
         match self {
+            &ast::Pat::Hole => write!(f, "_"),
+
             &ast::Pat::Id(ref id) => write!(f, "{}", id),
 
             &ast::Pat::Lit(ref lit) => write!(f, "{}", lit),
