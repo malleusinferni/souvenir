@@ -243,8 +243,10 @@ impl From<io::Error> for LoadErr {
 
 impl<'a> From<ParseErr<'a>> for LoadErr {
     fn from(err: ParseErr<'a>) -> Self {
-        // FIXME: Implement Display for TokErr and use .description()
-        LoadErr::Parse(format!("{:?}", err))
+        LoadErr::Parse(match err.cause() {
+            Some(err) => format!("{}: {}", err.description(), err),
+            None => format!("{:?}", err)
+        })
     }
 }
 

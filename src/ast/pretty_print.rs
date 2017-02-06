@@ -174,6 +174,99 @@ impl IndentLines for String {
     }
 }
 
+use ast::tokens::{Tok, TokErr};
+
+impl Display for TokErr {
+    fn fmt(&self, f: &mut Formatter) -> Result {
+        use ast::tokens::ErrReason;
+
+        let &TokErr { location, ref reason } = self;
+
+        match reason {
+            &ErrReason::UnrecognizedToken => {
+                write!(f, "Unrecognized token")
+            },
+
+            &ErrReason::InvalidStringLiteral => {
+                write!(f, "Invalid string literal")
+            },
+
+            &ErrReason::InvalidNumberLiteral => {
+                write!(f, "Invalid number literal")
+            },
+
+            &ErrReason::InvalidCamelCase => {
+                write!(f, "Variable names must be in CamelCase")
+            },
+
+            &ErrReason::InvalidSnakeCase => {
+                write!(f, "Scene and atom names must be in snake_case")
+            },
+
+            &ErrReason::InvalidScreamingCase => {
+                write!(f, "Macro names must be in SCREAMING_CASE")
+            },
+        }
+    }
+}
+
+impl<'a> Display for Tok<'a> {
+    fn fmt(&self, f: &mut Formatter) -> Result {
+        write!(f, "{}", match self {
+            &Tok::EndLn => ";",
+            &Tok::EndBlk => ";;",
+
+            &Tok::KwDisarm => "disarm",
+            &Tok::KwFrom => "from",
+            &Tok::KwGiven => "given",
+            &Tok::KwIf => "if",
+            &Tok::KwLet => "let",
+            &Tok::KwListen => "listen",
+            &Tok::KwSpawn => "spawn",
+            &Tok::KwThen => "then",
+            &Tok::KwTrace => "trace",
+            &Tok::KwTrap => "trap",
+            &Tok::KwWait => "wait",
+            &Tok::KwWeave => "weave",
+            &Tok::KwWhen => "when",
+
+            &Tok::NmScene(ref s) => s,
+            &Tok::NmLabel(ref s) => s,
+            &Tok::NmMacro(ref s) => s,
+            &Tok::NmVar(ref s) => s,
+
+            &Tok::LitAtom(ref s) => s,
+            &Tok::LitInt(ref s) => s,
+            &Tok::LitRoll(ref s) => s,
+            &Tok::LitStr(ref s) => s,
+
+            &Tok::OpAssign => "=",
+            &Tok::OpComma => ",",
+            &Tok::OpDot => ".",
+            &Tok::OpSend => "<-",
+            &Tok::OpColon => ":",
+            &Tok::OpMul => "*",
+            &Tok::OpDiv => "/",
+            &Tok::OpAdd => "+",
+            &Tok::OpSub => "-",
+
+            &Tok::Pipe => "|",
+            &Tok::Hole => "_",
+            &Tok::Scene => "==",
+            &Tok::Divert => "->",
+
+            &Tok::LParen => "(",
+            &Tok::RParen => ")",
+            &Tok::LSquare => "[",
+            &Tok::RSquare => "]",
+            &Tok::LCurly => "{",
+            &Tok::RCurly => "}",
+            &Tok::LAngle => "<",
+            &Tok::RAngle => ">",
+        })
+    }
+}
+
 use driver::*;
 
 impl Display for LoadErr {
