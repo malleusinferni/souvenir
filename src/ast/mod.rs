@@ -26,7 +26,7 @@ pub struct Scene {
 
 #[derive(Clone, Debug, PartialEq)]
 pub struct WeaveArm {
-    pub guard: Expr,
+    pub guard: Cond,
     pub message: Expr,
     pub body: Block,
 }
@@ -35,7 +35,7 @@ pub struct WeaveArm {
 pub struct TrapArm {
     pub pattern: Pat,
     pub origin: Pat,
-    pub guard: Expr,
+    pub guard: Cond,
     pub body: Block,
 }
 
@@ -145,6 +145,19 @@ pub enum Expr {
 }
 
 #[derive(Clone, Debug, PartialEq)]
+pub enum Cond {
+    True,
+    False,
+    LastResort,
+    Eql(Expr, Expr),
+    Lt(Expr, Expr),
+    Gt(Expr, Expr),
+    Lte(Expr, Expr),
+    Gte(Expr, Expr),
+    Not(Box<Cond>),
+}
+
+#[derive(Clone, Debug, PartialEq)]
 pub enum Pat {
     Id(Ident),
     Lit(Lit),
@@ -169,12 +182,6 @@ pub enum Op {
     Sub,
     Div,
     Mul,
-    Eql,
-    Gt,
-    Lt,
-    Gte,
-    Lte,
-    Not,
     Roll,
 }
 
@@ -201,14 +208,5 @@ impl Default for Ident {
 impl Default for Label {
     fn default() -> Self {
         Label::Anonymous
-    }
-}
-
-impl From<bool> for Expr {
-    fn from(cond: bool) -> Self {
-        match cond {
-            true => Expr::Lit(Lit::Int(1)),
-            false => Expr::Lit(Lit::Int(0)),
-        }
     }
 }

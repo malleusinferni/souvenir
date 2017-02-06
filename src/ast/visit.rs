@@ -28,12 +28,12 @@ pub trait Visitor {
     fn visit_trap_arm(&mut self, t: &TrapArm) -> Try<()> {
         self.visit_pattern(&t.pattern)?;
         self.visit_pattern(&t.origin)?;
-        self.visit_expr(&t.guard)?;
+        self.visit_cond(&t.guard)?;
         self.visit_block(&t.body)
     }
 
     fn visit_weave_arm(&mut self, t: &WeaveArm) -> Try<()> {
-        self.visit_expr(&t.guard)?;
+        self.visit_cond(&t.guard)?;
         self.visit_expr(&t.message)?;
         self.visit_block(&t.body)
     }
@@ -134,6 +134,43 @@ pub trait Visitor {
                 self.visit_call(target)
             },
         }
+    }
+
+    fn visit_cond(&mut self, t: &Cond) -> Try<()> {
+        Ok(match t {
+            &Cond::True => (),
+            &Cond::False => (),
+            &Cond::LastResort => (),
+
+            &Cond::Eql(ref lhs, ref rhs) => {
+                self.visit_expr(lhs)?;
+                self.visit_expr(rhs)?;
+            },
+
+            &Cond::Lt(ref lhs, ref rhs) => {
+                self.visit_expr(lhs)?;
+                self.visit_expr(rhs)?;
+            },
+
+            &Cond::Gt(ref lhs, ref rhs) => {
+                self.visit_expr(lhs)?;
+                self.visit_expr(rhs)?;
+            },
+
+            &Cond::Lte(ref lhs, ref rhs) => {
+                self.visit_expr(lhs)?;
+                self.visit_expr(rhs)?;
+            },
+
+            &Cond::Gte(ref lhs, ref rhs) => {
+                self.visit_expr(lhs)?;
+                self.visit_expr(rhs)?;
+            },
+
+            &Cond::Not(ref cond) => {
+                self.visit_cond(cond)?;
+            },
+        })
     }
 
     fn visit_pattern(&mut self, t: &Pat) -> Try<()> {

@@ -121,7 +121,7 @@ WeaveArm: ast::WeaveArm = {
 
     "|" "_" ";" <body:Block> => {
         ast::WeaveArm {
-            guard: ast::Expr::Id(ast::Ident::Hole),
+            guard: ast::Cond::LastResort,
             message: ast::Expr::Str(ast::Str::Plain("".to_owned())),
             body: body,
         }
@@ -131,9 +131,9 @@ WeaveArm: ast::WeaveArm = {
 };
 
 #[inline]
-WeaveGuard: ast::Expr = {
-    <guard:("if" <Expr> "then")?> => {
-        guard.unwrap_or(true.into())
+WeaveGuard: ast::Cond = {
+    <guard:("if" <Cond> "then")?> => {
+        guard.unwrap_or(ast::Cond::True)
     }
 };
 
@@ -156,9 +156,9 @@ TrapSender: ast::Pat = {
 };
 
 #[inline]
-TrapGuard: ast::Expr = {
-    <guard:("when" <Expr>)?> => {
-        guard.unwrap_or(true.into())
+TrapGuard: ast::Cond = {
+    <guard:("when" <Cond>)?> => {
+        guard.unwrap_or(ast::Cond::True)
     }
 };
 
@@ -226,6 +226,11 @@ Pat: ast::Pat = {
     "[" <contents:(Comma<Pat>)?> "]" => {
         ast::Pat::List(contents.unwrap_or(vec![]))
     },
+};
+
+Cond: ast::Cond = {
+    // FIXME: More operators
+    <Expr> "==" <Expr> => ast::Cond::Eql(<>),
 };
 
 Expr: ast::Expr = {

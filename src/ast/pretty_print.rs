@@ -84,6 +84,17 @@ impl Display for ast::Expr {
     }
 }
 
+impl Display for ast::Cond {
+    fn fmt(&self, f: &mut Formatter) -> Result {
+        match self {
+            &ast::Cond::True => write!(f, "#yes"),
+            &ast::Cond::False => write!(f, "#no"),
+
+            _ => write!(f, "CONDITION"),
+        }
+    }
+}
+
 impl Display for ast::Lit {
     fn fmt(&self, f: &mut Formatter) -> Result {
         match self {
