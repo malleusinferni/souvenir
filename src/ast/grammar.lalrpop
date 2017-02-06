@@ -150,9 +150,9 @@ WeaveGuard: ast::Cond = {
 };
 
 TrapArm: ast::TrapArm = {
-    "|" <p:Pat> <o:TrapSender> <g:TrapGuard> ";" <body:Block> => {
+    "|" <p:Comma<Pat>> <o:TrapSender> <g:TrapGuard> ";" <body:Block> => {
         ast::TrapArm {
-            pattern: p,
+            pattern: ast::Pat::List(p),
             origin: o,
             guard: g,
             body: body,
