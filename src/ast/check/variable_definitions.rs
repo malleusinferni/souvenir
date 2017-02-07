@@ -5,6 +5,25 @@ use ast::visit::*;
 
 use driver::{Try, BuildErr, ErrCtx, BuildErrWithCtx};
 
+impl Program {
+    pub fn check_variable_definitions(&self) -> Try<()> {
+        let mut pass = Pass {
+            env: vec![],
+            context: ErrCtx::NoContext,
+            errors: vec![],
+            shadowed: vec![],
+        };
+
+        pass.visit_program(&self)?;
+
+        if pass.errors.len() > 0 {
+            return Err(pass.errors.into());
+        }
+
+        Ok(())
+    }
+}
+
 struct VarDef {
     uses: usize,
 }

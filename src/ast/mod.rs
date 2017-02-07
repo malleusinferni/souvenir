@@ -2,7 +2,7 @@ pub mod tokens;
 pub mod grammar;
 pub mod visit;
 pub mod check;
-//pub mod translate;
+pub mod translate;
 pub mod pretty_print;
 
 #[derive(Clone, Debug, PartialEq)]
