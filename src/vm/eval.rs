@@ -42,7 +42,7 @@ pub struct Stack {
     pub ts: Option<TrapState>,
 }
 
-#[derive(Copy, Clone, Debug)]
+#[derive(Clone, Debug)]
 pub struct TrapState {
     /// Return address to restore execution when the last handler exits.
     pub ra: Address,
@@ -51,7 +51,7 @@ pub struct TrapState {
     pub arg: Value,
 
     /// Index into `traps` of the currently executing handler.
-    pub id: u32,
+    pub next: Vec<Trap>,
 
     /// Offset into the parent stack where the local frame begins.
     pub sp: u32,
@@ -66,9 +66,9 @@ pub enum Argvec<'a> {
     Inherited(&'a Process),
 }
 
-#[derive(Copy, Clone, Debug)]
+#[derive(Clone, Debug)]
 pub struct TrapCall {
-    id: u32,
+    next: Vec<Trap>,
     ra: Address,
     arg: Value,
 }
@@ -147,22 +147,16 @@ impl Process {
             },
 
             Instr::TrapRemove(label) => {
-                for trap in self.traps.iter_mut().rev() {
-                    if trap.label != label { continue; }
-                    trap.disarm();
-                }
+                self.traps.retain(|trap| { trap.label != label })
             },
 
             Instr::TrapReject => {
-                let ts: TrapState = self.stack.leave()?;
+                let mut ts: TrapState = self.stack.leave()?;
                 self.pc = ts.ra;
 
-                if let Some(next) = ts.id.checked_sub(1) {
-                    let &Trap { label, env } = self.traps.get(next as usize)
-                        .ok_or(self.op.illegal())?;
-
+                if let Some(Trap { label, env }) = ts.next.pop() {
                     self.stack.enter(TrapCall {
-                        id: next,
+                        next: ts.next,
                         ra: self.pc,
                         arg: ts.arg
                     }, self.heap.read(env.as_list_addr()?)?)?;
@@ -353,7 +347,7 @@ impl Default for Stack {
 
 impl Stack {
     fn write_barrier(&self) -> usize {
-        match self.ts {
+        match self.ts.as_ref() {
             Some(ts) => ts.wb as usize,
             None => self.wb as usize,
         }
@@ -374,7 +368,7 @@ impl Stack {
     }
 
     pub fn read(&self, mut addr: usize) -> Ret<Value> {
-        if let Some(ts) = self.ts {
+        if let Some(ts) = self.ts.as_ref() {
             addr += ts.sp as usize;
         }
 
@@ -401,7 +395,7 @@ impl Stack {
     }
 
     pub fn trim(&mut self, mut len: usize) -> Ret<()> {
-        if let Some(ts) = self.ts {
+        if let Some(ts) = self.ts.as_ref() {
             len += ts.sp as usize;
         }
 
@@ -423,7 +417,7 @@ impl Stack {
 
         self.ts = Some(TrapState {
             ra: trap.ra,
-            id: trap.id,
+            next: trap.next,
             arg: trap.arg,
             sp: sp,
             wb: sp,
@@ -451,7 +445,7 @@ impl Stack {
     }
 
     pub fn read_registers(&self) -> &[Value] {
-        match self.ts {
+        match self.ts.as_ref() {
             Some(ts) => &self.contents[ts.sp as usize .. ts.wb as usize],
             None => &self.contents[0 .. self.wb as usize],
         }
