@@ -205,11 +205,32 @@ impl Translator {
 
             ast::Stmt::Let { value, name } => ir::Stmt::Let {
                 value: self.tr_expr(value)?,
-                dest: unimplemented!(),
+                dest: ir::Var::Id(match name {
+                    ast::Ident::Var { name } => {
+                        self.assign(&name)?;
+                        name
+                    },
+                    _ => ice!("Invalid assign"),
+                }),
             },
 
-            ast::Stmt::Listen { name, arms } => {
-                unimplemented!()
+            ast::Stmt::Listen { name, arms } => ir::Stmt::Sugar {
+                stmt: ir::SugarStmt::Listen {
+                    label: self.tr_label(name)?,
+                    arms: {
+                        let mut tr_arms = Vec::with_capacity(arms.len());
+                        for arm in arms.into_iter() {
+                            tr_arms.push(ir::TrapArm {
+                                pattern: self.tr_pat(arm.pattern)?,
+                                sender: self.tr_pat(arm.origin)?,
+                                guard: self.tr_cond(arm.guard)?,
+                                body: self.tr_block(arm.body)?,
+                            });
+                        }
+
+                        tr_arms
+                    },
+                },
             },
 
             ast::Stmt::Naked { .. } => {
@@ -236,8 +257,22 @@ impl Translator {
                 value: self.tr_expr(value)?,
             },
 
-            ast::Stmt::Weave { name, arms } => {
-                unimplemented!()
+            ast::Stmt::Weave { name, arms } => ir::Stmt::Sugar {
+                stmt: ir::SugarStmt::Weave {
+                    label: self.tr_label(name)?,
+                    arms: {
+                        let mut tr_arms = Vec::with_capacity(arms.len());
+                        for arm in arms.into_iter() {
+                            tr_arms.push(ir::WeaveArm {
+                                guard: self.tr_cond(arm.guard)?,
+                                message: self.tr_expr(arm.message)?,
+                                body: self.tr_block(arm.body)?,
+                            })
+                        }
+
+                        tr_arms
+                    },
+                },
             },
 
             ast::Stmt::Trap { name, arms } => {
@@ -285,7 +320,7 @@ impl Translator {
             },
 
             ast::Expr::Op(_, _) => {
-                unimplemented!()
+                ice!("Binops not implemented")
             },
 
             ast::Expr::List(items) => {
@@ -367,7 +402,23 @@ impl Translator {
     }
 
     fn tr_cond(&mut self, t: ast::Cond) -> Try<ir::Cond> {
-        unimplemented!()
+        Ok(match t {
+            ast::Cond::True => ir::Cond::True,
+            ast::Cond::False => ir::Cond::False,
+            ast::Cond::LastResort => ir::Cond::LastResort,
+
+            ast::Cond::Not(cond) => ir::Cond::Not(Box::new({
+                self.tr_cond(*cond)?
+            })),
+
+            ast::Cond::Compare(ast::BoolOp::Eql, lhs, rhs) => {
+                let lhs = self.tr_expr(lhs)?;
+                let rhs = self.tr_expr(rhs)?;
+                ir::Cond::Equals(lhs, rhs)
+            },
+
+            other => ice!("Not implemented: {}", other),
+        })
     }
 
     fn tr_call(&mut self, t: ast::Call) -> Try<ir::Call> {
