@@ -21,18 +21,22 @@ pub trait Visitor {
 
     fn visit_module(&mut self, t: &Module, p: &Modpath) -> Try<()> {
         self.error_context().begin_module(p);
+        self.enter();
         each(&t.globals.0, |t| self.visit_stmt(t))?;
-        each(&t.scenes, |t| self.visit_scene(t))
+        each(&t.scenes, |t| self.visit_scene(t))?;
+        self.leave()
     }
 
     fn visit_scene(&mut self, t: &Scene) -> Try<()> {
         self.error_context().begin_scene(&t.name.name)?;
+        self.enter();
         self.visit_scene_name(&t.name)?;
         each(&t.args, |t| match t.as_ref() {
             Some(t) => self.visit_id_assign(t),
             None => Ok(()),
         })?;
         self.visit_block(&t.body)?;
+        self.leave()?;
         self.error_context().pop()
     }
 
@@ -82,6 +86,12 @@ pub trait Visitor {
                 self.visit_expr(value)?;
             },
 
+            &Stmt::If { ref test, ref success, ref failure } => {
+                self.visit_cond(test)?;
+                self.visit_block(success)?;
+                self.visit_block(failure)?;
+            },
+
             &Stmt::Let { ref value, ref name } => {
                 self.visit_expr(value)?;
                 self.visit_id_assign(name)?;
@@ -106,6 +116,8 @@ pub trait Visitor {
             &Stmt::Recur { ref target } => {
                 self.visit_call(target)?;
             },
+
+            &Stmt::Return { ref result } => { let _ = result; () },
 
             &Stmt::SendMsg { ref target, ref message } => {
                 self.visit_expr(message)?;
@@ -166,6 +178,10 @@ pub trait Visitor {
 
             &Expr::Spawn(ref target) => {
                 self.visit_call(target)
+            },
+
+            &Expr::Splice(ref elems) => {
+                each(elems, |t| self.visit_expr(t))
             },
 
             &Expr::PidOfSelf => Ok(()),

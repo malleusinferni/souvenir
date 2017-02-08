@@ -1,8 +1,8 @@
 pub mod tokens;
 pub mod grammar;
 pub mod visit;
-pub mod check;
-//pub mod translate;
+pub mod rewrite;
+pub mod pass;
 pub mod pretty_print;
 
 #[derive(Clone, Debug, PartialEq)]
@@ -60,6 +60,12 @@ pub enum Stmt {
         value: Expr,
     },
 
+    If {
+        test: Cond,
+        success: Block,
+        failure: Block,
+    },
+
     Let {
         value: Expr,
         name: Ident,
@@ -83,6 +89,10 @@ pub enum Stmt {
 
     Recur {
         target: Call,
+    },
+
+    Return {
+        result: bool,
     },
 
     SendMsg {
@@ -142,7 +152,7 @@ pub enum Label {
     Anonymous,
 }
 
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, Eq, Hash, PartialEq)]
 pub struct Ident {
     name: String,
 }
@@ -155,6 +165,7 @@ pub enum Expr {
     Int(i32),
     //Time(u16, TimeUnit),
     Str(Str),
+    Splice(Vec<Expr>),
     Op(Op, Vec<Expr>),
     List(Vec<Expr>),
     Nth(Box<Expr>, u32),
