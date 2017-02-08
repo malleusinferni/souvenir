@@ -5,6 +5,14 @@ use driver::{Try, ErrCtx};
 pub trait Visitor {
     fn error_context(&mut self) -> &mut ErrCtx;
 
+    fn enter(&mut self) {
+
+    }
+
+    fn leave(&mut self) -> Try<()> {
+        Ok(())
+    }
+
     fn visit_program(&mut self, t: &Program) -> Try<()> {
         each(&t.modules, |&(ref modpath, ref t)| {
             self.visit_module(t, modpath)
@@ -20,7 +28,10 @@ pub trait Visitor {
     fn visit_scene(&mut self, t: &Scene) -> Try<()> {
         self.error_context().begin_scene(&t.name.name)?;
         self.visit_scene_name(&t.name)?;
-        each(&t.args, |t| self.visit_ident(t))?;
+        each(&t.args, |t| match t.as_ref() {
+            Some(t) => self.visit_id_assign(t),
+            None => Ok(()),
+        })?;
         self.visit_block(&t.body)?;
         self.error_context().pop()
     }
@@ -38,6 +49,12 @@ pub trait Visitor {
         self.visit_block(&t.body)
     }
 
+    fn visit_match_arm(&mut self, t: &MatchArm) -> Try<()> {
+        self.visit_pattern(&t.pattern)?;
+        self.visit_cond(&t.guard)?;
+        self.visit_block(&t.body)
+    }
+
     fn visit_call(&mut self, t: &Call) -> Try<()> {
         let &Call(ref name, ref args) = t;
         self.visit_scene_name(name)?;
@@ -46,7 +63,9 @@ pub trait Visitor {
 
     fn visit_block(&mut self, t: &Block) -> Try<()> {
         let &Block(ref t) = t;
-        each(t, |t| self.visit_stmt(t))
+        self.enter();
+        each(t, |t| self.visit_stmt(t))?;
+        self.leave()
     }
 
     fn visit_stmt(&mut self, t: &Stmt) -> Try<()> {
@@ -65,7 +84,7 @@ pub trait Visitor {
 
             &Stmt::Let { ref value, ref name } => {
                 self.visit_expr(value)?;
-                self.visit_ident(name)?;
+                self.visit_id_assign(name)?;
             },
 
             &Stmt::Listen { ref name, ref arms } => {
@@ -73,12 +92,15 @@ pub trait Visitor {
                 each(arms, |t| self.visit_trap_arm(t))?;
             },
 
+            &Stmt::Match { ref value, ref arms, ref or_else } => {
+                self.visit_expr(value)?;
+                each(arms, |t| self.visit_match_arm(t))?;
+                self.visit_block(or_else)?;
+            },
+
             &Stmt::Naked { ref message, ref target } => {
                 self.visit_string(message)?;
-
-                if let Some(target) = target.as_ref() {
-                    self.visit_ident(target)?;
-                }
+                self.visit_expr(target)?;
             },
 
             &Stmt::Recur { ref target } => {
@@ -87,7 +109,7 @@ pub trait Visitor {
 
             &Stmt::SendMsg { ref target, ref message } => {
                 self.visit_expr(message)?;
-                self.visit_ident(target)?;
+                self.visit_expr(target)?;
             },
 
             &Stmt::Trace { ref value } => {
@@ -114,13 +136,17 @@ pub trait Visitor {
 
     fn visit_expr(&mut self, t: &Expr) -> Try<()> {
         match t {
-            &Expr::Id(ref ident) => {
-                self.visit_ident(ident)
+            &Expr::Arg => Ok(()),
+
+            &Expr::Atom(ref atom) => {
+                self.visit_atom(atom)
             },
 
-            &Expr::Lit(ref lit) => {
-                self.visit_literal(lit)
+            &Expr::Id(ref ident) => {
+                self.visit_id_eval(ident)
             },
+
+            &Expr::Int(_) => Ok(()),
 
             &Expr::Str(ref string) => {
                 self.visit_string(string)
@@ -134,9 +160,19 @@ pub trait Visitor {
                 each(elems, |t| self.visit_expr(t))
             },
 
+            &Expr::Nth(ref expr, _) => {
+                self.visit_expr(expr.as_ref())
+            },
+
             &Expr::Spawn(ref target) => {
                 self.visit_call(target)
             },
+
+            &Expr::PidOfSelf => Ok(()),
+
+            &Expr::PidZero => Ok(()),
+
+            &Expr::Infinity => Ok(()),
         }
     }
 
@@ -146,9 +182,21 @@ pub trait Visitor {
             &Cond::False => (),
             &Cond::LastResort => (),
 
+            &Cond::HasLength(ref expr, _) => {
+                self.visit_expr(expr)?;
+            },
+
             &Cond::Compare(ref op, ref lhs, ref rhs) => {
                 self.visit_expr(lhs)?;
                 self.visit_expr(rhs)?;
+            },
+
+            &Cond::And(ref args) => {
+                each(args, |t| self.visit_cond(t))?;
+            },
+
+            &Cond::Or(ref args) => {
+                each(args, |t| self.visit_cond(t))?;
             },
 
             &Cond::Not(ref cond) => {
@@ -161,12 +209,12 @@ pub trait Visitor {
         match t {
             &Pat::Hole => Ok(()),
 
-            &Pat::Id(ref ident) => {
-                self.visit_ident(ident)
+            &Pat::Assign(ref ident) => {
+                self.visit_id_assign(ident)
             },
 
-            &Pat::Lit(ref literal) => {
-                self.visit_literal(literal)
+            &Pat::Match(ref expr) => {
+                self.visit_expr(expr)
             },
 
             &Pat::List(ref list) => {
@@ -175,23 +223,15 @@ pub trait Visitor {
         }
     }
 
-    fn visit_literal(&mut self, t: &Lit) -> Try<()> {
-        match t {
-            &Lit::Atom(ref name) => {
-                self.visit_atom_name(name)
-            },
-
-            &Lit::Int(_) => {
-                Ok(())
-            },
-
-            &Lit::InvalidInt(ref n) => {
-                self.visit_invalid_int(n)
-            },
-        }
+    fn visit_atom(&mut self, _t: &Atom) -> Try<()> {
+        Ok(())
     }
 
-    fn visit_ident(&mut self, _t: &Ident) -> Try<()> {
+    fn visit_id_assign(&mut self, _t: &Ident) -> Try<()> {
+        Ok(())
+    }
+
+    fn visit_id_eval(&mut self, _t: &Ident) -> Try<()> {
         Ok(())
     }
 
@@ -207,14 +247,6 @@ pub trait Visitor {
         match t {
             &Str::Plain(_) => Ok(())
         }
-    }
-
-    fn visit_atom_name(&mut self, _t: &str) -> Try<()> {
-        Ok(())
-    }
-
-    fn visit_invalid_int(&mut self, _t: &str) -> Try<()> {
-        Ok(())
     }
 }
 

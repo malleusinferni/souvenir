@@ -39,7 +39,7 @@ struct Pass {
     shadowed: Vec<String>,
 }
 
-impl Pass {
+impl Visitor for Pass {
     fn enter(&mut self) {
         self.env.push(Scope { bindings: HashMap::new(), });
     }
@@ -51,7 +51,9 @@ impl Pass {
         }
     }
 
-    fn assign(&mut self, name: &str) -> Try<()> {
+    fn visit_id_assign(&mut self, name: &Ident) -> Try<()> {
+        let &Ident { ref name } = name;
+
         let previous = {
             let scope = match self.env.iter_mut().last() {
                 Some(s) => s,
@@ -74,7 +76,9 @@ impl Pass {
         Ok(())
     }
 
-    fn eval(&mut self, name: &str) -> Try<()> {
+    fn visit_id_eval(&mut self, name: &Ident) -> Try<()> {
+        let &Ident { ref name } = name;
+
         for scope in self.env.iter_mut().rev() {
             if let Some(def) = scope.bindings.get_mut(name) {
                 def.uses += 1;
@@ -87,15 +91,9 @@ impl Pass {
 
         Ok(())
     }
-}
 
-impl Visitor for Pass {
     fn error_context(&mut self) -> &mut ErrCtx {
         &mut self.context
-    }
-
-    fn visit_ident(&mut self, t: &Ident) -> Try<()> {
-        unimplemented!()
     }
 
     fn visit_block(&mut self, t: &Block) -> Try<()> {

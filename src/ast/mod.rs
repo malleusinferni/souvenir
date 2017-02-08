@@ -2,7 +2,7 @@ pub mod tokens;
 pub mod grammar;
 pub mod visit;
 pub mod check;
-pub mod translate;
+//pub mod translate;
 pub mod pretty_print;
 
 #[derive(Clone, Debug, PartialEq)]
@@ -22,7 +22,7 @@ pub struct Block(pub Vec<Stmt>);
 #[derive(Clone, Debug, PartialEq)]
 pub struct Scene {
     pub name: SceneName,
-    pub args: Vec<Ident>,
+    pub args: Vec<Option<Ident>>,
     pub body: Block,
 }
 
@@ -37,6 +37,13 @@ pub struct WeaveArm {
 pub struct TrapArm {
     pub pattern: Pat,
     pub origin: Pat,
+    pub guard: Cond,
+    pub body: Block,
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub struct MatchArm {
+    pub pattern: Pat,
     pub guard: Cond,
     pub body: Block,
 }
@@ -63,9 +70,15 @@ pub enum Stmt {
         arms: Vec<TrapArm>,
     },
 
+    Match {
+        value: Expr,
+        arms: Vec<MatchArm>,
+        or_else: Block,
+    },
+
     Naked {
         message: Str,
-        target: Option<Ident>,
+        target: Expr,
     },
 
     Recur {
@@ -74,7 +87,7 @@ pub enum Stmt {
 
     SendMsg {
         message: Expr,
-        target: Ident,
+        target: Expr,
     },
 
     Trace {
@@ -130,22 +143,25 @@ pub enum Label {
 }
 
 #[derive(Clone, Debug, PartialEq)]
-pub enum Ident {
-    Var {
-        name: String,
-    },
-
-    PidOfSelf,
+pub struct Ident {
+    name: String,
 }
 
 #[derive(Clone, Debug, PartialEq)]
 pub enum Expr {
+    Arg,
+    Atom(Atom),
     Id(Ident),
-    Lit(Lit),
+    Int(i32),
+    //Time(u16, TimeUnit),
     Str(Str),
     Op(Op, Vec<Expr>),
     List(Vec<Expr>),
+    Nth(Box<Expr>, u32),
     Spawn(Call),
+    PidOfSelf,
+    PidZero,
+    Infinity,
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -153,23 +169,28 @@ pub enum Cond {
     True,
     False,
     LastResort,
+    HasLength(Expr, u32),
     Compare(BoolOp, Expr, Expr),
+    And(Vec<Cond>),
+    Or(Vec<Cond>),
     Not(Box<Cond>),
 }
 
 #[derive(Clone, Debug, PartialEq)]
 pub enum Pat {
     Hole,
-    Id(Ident),
-    Lit(Lit),
+    Assign(Ident),
+    Match(Expr),
     List(Vec<Pat>),
 }
 
 #[derive(Clone, Debug, PartialEq)]
-pub enum Lit {
-    Atom(String),
-    Int(i32),
-    InvalidInt(String),
+pub enum Atom {
+    MenuItem,
+    MenuEnd,
+    LastResort,
+    PrintLine,
+    User(String),
 }
 
 #[derive(Clone, Debug, PartialEq)]

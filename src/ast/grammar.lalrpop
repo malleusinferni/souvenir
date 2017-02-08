@@ -17,7 +17,7 @@ Scene: ast::Scene = {
             name: name.to_string(),
             in_module: None,
         },
-        args: args.unwrap_or_default(),
+        args: args.unwrap_or(vec![]),
         body: body,
     },
 };
@@ -62,17 +62,15 @@ Statement: ast::Stmt = {
         }
     },
 
-    "let" <name:Ident> "=" <value:Expr> ";" => {
-        ast::Stmt::Let {
-            name: name,
+    "let" <name:IdAssign> "=" <value:Expr> ";" => match name {
+        Some(id) => ast::Stmt::Let {
+            name: id,
             value: value,
-        }
-    },
+        },
 
-    "let" "_" "=" <value:Expr> ";" => {
-        ast::Stmt::Discard {
+        None => ast::Stmt::Discard {
             value: value,
-        }
+        },
     },
 
     "wait" <Expr> ";" => {
@@ -83,22 +81,22 @@ Statement: ast::Stmt = {
 
     <Str> ";" => {
         ast::Stmt::Naked {
-            target: None,
+            target: ast::Expr::PidZero,
             message: <>,
         }
     },
 
-    <name:Ident> <message:Str> ";" => {
+    <name:IdExpr> <message:Str> ";" => {
         ast::Stmt::Naked {
-            target: Some(name),
+            target: name,
             message: message,
         }
     },
 
-    <target:Ident> "<-" <message:Comma<Expr>> ";" => {
+    <target:IdExpr> "<-" <message:Message> ";" => {
         ast::Stmt::SendMsg {
             target: target,
-            message: ast::Expr::List(message),
+            message: message,
         }
     },
 
@@ -108,16 +106,9 @@ Statement: ast::Stmt = {
         }
     },
 
-    <name:("let" <Ident> "=")?> "spawn" <target:Call> ";" => {
-        match name {
-            Some(id) => ast::Stmt::Let {
-                name: id,
-                value: ast::Expr::Spawn(target),
-            },
-
-            None => ast::Stmt::Discard {
-                value: ast::Expr::Spawn(target),
-            },
+    "spawn" <Call> ";" => {
+        ast::Stmt::Discard {
+            value: ast::Expr::Spawn(<>),
         }
     },
 };
@@ -162,8 +153,8 @@ TrapArm: ast::TrapArm = {
 
 #[inline]
 TrapSender: ast::Pat = {
-    <sender:("from" <Ident>)?> => {
-        sender.map(|id| ast::Pat::Id(id)).unwrap_or_default()
+    <sender:("from" <Pat>)?> => {
+        sender.unwrap_or_default()
     }
 };
 
@@ -182,8 +173,8 @@ Comma<T>: Vec<T> = {
     },
 };
 
-ArgList: Vec<ast::Ident> = {
-    "(" <args:(Comma<Ident>)?> ")" => args.unwrap_or_default(),
+ArgList: Vec<Option<ast::Ident>> = {
+    "(" <args:(Comma<IdAssign>)?> ")" => args.unwrap_or(vec![]),
 };
 
 Call: ast::Call = {
@@ -207,13 +198,22 @@ Label: ast::Label = {
     },
 };
 
-Ident: ast::Ident = {
+IdExpr: ast::Expr = {
     <name:"NmVar"> => match name {
-        "Self" => ast::Ident::PidOfSelf,
+        "Self" => ast::Expr::PidOfSelf,
 
-        name => ast::Ident::Var {
-            name: name.to_string()
-        },
+        id => ast::Expr::Id(ast::Ident { name: id.to_owned(), }),
+    }
+};
+
+IdAssign: Option<ast::Ident> = {
+    "_" => None,
+
+    <name:"NmVar"> => match name {
+        //"Self" => panic!("Can't assign to self"),
+        // Just allow it for now, and check it using an AST visit pass
+
+        name => Some(ast::Ident { name: name.to_string() }),
     },
 };
 
@@ -231,9 +231,13 @@ Modpath: ast::Modpath = {
 Pat: ast::Pat = {
     "_" => ast::Pat::Hole,
 
-    <Ident> => ast::Pat::Id(<>),
+    <id:"NmVar"> => match id {
+        "Self" => ast::Pat::Match(ast::Expr::PidOfSelf),
 
-    <Literal> => ast::Pat::Lit(<>),
+        name => ast::Pat::Assign(ast::Ident { name: name.to_owned() }),
+    },
+
+    <Literal> => ast::Pat::Match(<>),
 
     "[" <contents:(Comma<Pat>)?> "]" => {
         ast::Pat::List(contents.unwrap_or(vec![]))
@@ -243,6 +247,10 @@ Pat: ast::Pat = {
 Cond: ast::Cond = {
     // FIXME: More operators
     <Expr> "==" <Expr> => ast::Cond::Compare(ast::BoolOp::Eql, <>),
+};
+
+Message: ast::Expr = {
+    <Comma<Expr>> => ast::Expr::List(<>),
 };
 
 Expr: ast::Expr = {
@@ -277,25 +285,27 @@ Expr1: ast::Expr = {
 };
 
 Expr0: ast::Expr = {
-    <Ident> => ast::Expr::Id(<>),
+    <IdExpr> => <>,
 
-    <Literal> => ast::Expr::Lit(<>),
+    <Literal> => <>,
 
     // TODO: String
 
     "(" <e:Expr> ")" => e,
+
+    "spawn" <Call> => ast::Expr::Spawn(<>),
 
     "[" <elems:(Comma<Expr>)?> "]" => {
         ast::Expr::List(elems.unwrap_or(vec![]))
     },
 };
 
-Literal: ast::Lit = {
-    <a:"LitAtom"> => ast::Lit::Atom({
+Literal: ast::Expr = {
+    <a:"LitAtom"> => ast::Expr::Atom(ast::Atom::User({
         a.chars().skip(1).collect::<String>()
-    }),
+    })),
 
-    <n:"LitInt"> => ast::Lit::Int({
+    <n:"LitInt"> => ast::Expr::Int({
         n.parse::<i32>().expect("Can't parse int")
     }),
 };

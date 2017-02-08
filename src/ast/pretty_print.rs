@@ -19,10 +19,8 @@ impl Display for ast::Label {
 
 impl Display for ast::Ident {
     fn fmt(&self, f: &mut Formatter) -> Result {
-        match self {
-            &ast::Ident::Var { ref name } => write!(f, "{}", name),
-            &ast::Ident::PidOfSelf => write!(f, "Self"),
-        }
+        let &ast::Ident { ref name } = self;
+        write!(f, "{}", name)
     }
 }
 
@@ -74,8 +72,6 @@ impl Display for ast::Expr {
         match self {
             &ast::Expr::Id(ref id) => write!(f, "{}", id),
 
-            &ast::Expr::Lit(ref lit) => write!(f, "{}", lit),
-
             &ast::Expr::Str(_) => write!(f, "> I don't think so"),
 
             _ => write!(f, "EXPRESSION"),
@@ -94,14 +90,12 @@ impl Display for ast::Cond {
     }
 }
 
-impl Display for ast::Lit {
+impl Display for ast::Atom {
     fn fmt(&self, f: &mut Formatter) -> Result {
         match self {
-            &ast::Lit::Atom(ref name) => write!(f, "#{}", name),
+            &ast::Atom::User(ref name) => write!(f, "#{}", name),
 
-            &ast::Lit::Int(ref n) => write!(f, "{}", n),
-
-            &ast::Lit::InvalidInt(ref s) => write!(f, "{}", s),
+            _ => write!(f, "#[internal]"),
         }
     }
 }
@@ -111,9 +105,9 @@ impl Display for ast::Pat {
         match self {
             &ast::Pat::Hole => write!(f, "_"),
 
-            &ast::Pat::Id(ref id) => write!(f, "{}", id),
+            &ast::Pat::Assign(ref id) => write!(f, "{}", id),
 
-            &ast::Pat::Lit(ref lit) => write!(f, "{}", lit),
+            &ast::Pat::Match(ref expr) => write!(f, "{}", expr),
 
             &ast::Pat::List(ref items) => write!(f, "[{}]", {
                 items.iter()
