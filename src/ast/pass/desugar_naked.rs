@@ -3,6 +3,21 @@ use ast::rewrite::*;
 
 use driver::Try;
 
+impl Module {
+    pub fn reflow_text(&mut self) -> Try<()> {
+        let mut scenes = Vec::with_capacity(self.scenes.len());
+        for scene in self.scenes.drain(..) {
+            let mut pass = Pass;
+            let scene = pass.rw_scene(scene)?;
+            scenes.push(scene);
+        }
+
+        self.scenes = scenes;
+
+        Ok(())
+    }
+}
+
 struct Pass;
 
 impl Rewriter for Pass {
@@ -48,4 +63,30 @@ impl Rewriter for Pass {
 
         Ok(Block(output))
     }
+}
+
+#[test]
+fn reflow() {
+    let before = r"
+    == start
+    > This
+    > should
+    > all
+    > be
+    > on
+    > one
+    > line.
+    ";
+
+    let after = r"
+    == start
+    > This should all be on one line.
+    ";
+
+    let mut before_parsed = Module::parse(before).unwrap();
+    before_parsed.reflow_text().unwrap();
+
+    let after_parsed = Module::parse(after).unwrap();
+
+    assert_eq!(before_parsed, after_parsed);
 }
