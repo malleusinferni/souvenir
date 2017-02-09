@@ -203,6 +203,7 @@ pub trait Visitor {
             },
 
             &Cond::Compare(ref op, ref lhs, ref rhs) => {
+                let _ = op;
                 self.visit_expr(lhs)?;
                 self.visit_expr(rhs)?;
             },

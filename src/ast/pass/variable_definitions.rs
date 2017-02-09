@@ -95,8 +95,4 @@ impl Visitor for Pass {
     fn error_context(&mut self) -> &mut ErrCtx {
         &mut self.context
     }
-
-    fn visit_block(&mut self, t: &Block) -> Try<()> {
-        unimplemented!()
-    }
 }

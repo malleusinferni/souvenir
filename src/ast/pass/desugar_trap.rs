@@ -49,6 +49,8 @@ impl Pass {
             },
         };
 
+        let _ = l;
+        let _ = body;
         ice!("Not yet implemented");
     }
 }

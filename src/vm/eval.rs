@@ -599,12 +599,6 @@ impl Value {
     }
 }
 
-impl Trap {
-    fn disarm(&mut self) {
-        unimplemented!()
-    }
-}
-
 impl Instr {
     pub fn guard(self, cond: bool) -> Ret<()> {
         if cond {
