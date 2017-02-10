@@ -4,6 +4,7 @@ extern crate lalrpop_util;
 #[macro_use]
 pub mod driver;
 pub mod ast;
+pub mod ir;
 pub mod vm;
 
 #[test]

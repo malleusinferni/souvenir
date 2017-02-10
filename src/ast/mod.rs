@@ -1,9 +1,12 @@
 pub mod tokens;
 pub mod grammar;
+
 pub mod visit;
 pub mod rewrite;
 pub mod pass;
 pub mod pretty_print;
+
+pub mod translate;
 
 #[derive(Clone, Debug, PartialEq)]
 pub struct Program {
@@ -51,6 +54,10 @@ pub struct MatchArm {
 #[derive(Clone, Debug, PartialEq)]
 pub enum Stmt {
     Empty,
+
+    Arm {
+
+    },
 
     Disarm {
         target: Label,
