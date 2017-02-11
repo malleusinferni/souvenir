@@ -52,12 +52,15 @@ pub struct MatchArm {
 }
 
 #[derive(Clone, Debug, PartialEq)]
+pub struct TrapLambda {
+    pub label: Label,
+    pub captures: Vec<Ident>,
+    pub body: Block,
+}
+
+#[derive(Clone, Debug, PartialEq)]
 pub enum Stmt {
     Empty,
-
-    Arm {
-
-    },
 
     Disarm {
         target: Label,
@@ -76,6 +79,11 @@ pub enum Stmt {
     Let {
         value: Expr,
         name: Ident,
+    },
+
+    LetFn {
+        lambda: TrapLambda,
+        blocking: bool,
     },
 
     Listen {
@@ -168,6 +176,7 @@ pub struct Ident {
 pub enum Expr {
     Arg,
     Atom(Atom),
+    Bool(Box<Cond>),
     Id(Ident),
     Int(i32),
     //Time(u16, TimeUnit),
@@ -175,6 +184,7 @@ pub enum Expr {
     Splice(Vec<Expr>),
     Op(Op, Vec<Expr>),
     List(Vec<Expr>),
+    MenuChoice(Vec<Expr>),
     Nth(Box<Expr>, u32),
     Spawn(Call),
     PidOfSelf,
@@ -204,9 +214,6 @@ pub enum Pat {
 
 #[derive(Clone, Debug, PartialEq)]
 pub enum Atom {
-    MenuItem,
-    MenuEnd,
-    LastResort,
     PrintLine,
     User(String),
 }

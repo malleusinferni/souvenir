@@ -57,6 +57,11 @@ pub trait Rewriter {
                 name: self.rw_id_assign(name)?,
             },
 
+            Stmt::LetFn { lambda, blocking } => Stmt::LetFn {
+                lambda: self.rw_lambda(lambda)?,
+                blocking: blocking,
+            },
+
             Stmt::Listen { name, arms } => Stmt::Listen {
                 name: self.rw_label(name)?,
                 arms: each(arms, |t| {
@@ -165,9 +170,17 @@ pub trait Rewriter {
             Expr::Infinity => Expr::Infinity,
             Expr::Arg => Expr::Arg,
 
+            Expr::Bool(cond) => Expr::Bool({
+                Box::new(self.rw_cond(*cond)?)
+            }),
+
             Expr::Id(v) => {
                 self.rw_id_eval(v)?
             },
+
+            Expr::MenuChoice(items) => Expr::MenuChoice({
+                each(items, |t| self.rw_expr(t))?
+            }),
 
             Expr::Nth(list, n) => Expr::Nth({
                 Box::new(self.rw_expr(*list)?)
@@ -209,7 +222,19 @@ pub trait Rewriter {
                 Cond::HasLength(list, length)
             },
 
-            _ => unimplemented!(),
+            Cond::True => Cond::True,
+            Cond::False => Cond::False,
+            Cond::LastResort => Cond::LastResort,
+
+            Cond::And(conds) => {
+                let conds = each(conds, |t| self.rw_cond(t))?;
+                Cond::And(conds)
+            },
+
+            Cond::Or(conds) => {
+                let conds = each(conds, |t| self.rw_cond(t))?;
+                Cond::Or(conds)
+            },
         })
     }
 
@@ -218,6 +243,10 @@ pub trait Rewriter {
         let name = self.rw_scene_name(name)?;
         let args = each(args, |t| self.rw_expr(t))?;
         Ok(Call(name, args))
+    }
+
+    fn rw_lambda(&mut self, t: TrapLambda) -> Try<TrapLambda> {
+        Ok(t) // FIXME: Do we allow this at all?
     }
 
     fn rw_id_eval(&mut self, t: Ident) -> Try<Expr> {

@@ -8,12 +8,11 @@ pub struct Flag(pub u32);
 pub struct Label(pub u32);
 
 #[derive(Copy, Clone, Debug, PartialEq)]
-pub struct ConstId(pub u32);
+pub struct ConstRef(pub u32);
 
 #[derive(Clone, Debug)]
 pub enum ConstValue {
     Atom(String),
-    Int(i32),
     Str(String),
 }
 
@@ -32,12 +31,18 @@ pub struct BlockInfo {
 }
 
 #[derive(Clone, Debug)]
+pub struct TrapRef {
+    pub label: Label,
+    pub env: Vec<Var>,
+}
+
+#[derive(Clone, Debug)]
 pub enum Op {
-    Arm(Label),
+    Arm(TrapRef),
     Disarm(Label),
     Discard(Rvalue),
     Let(Var, Rvalue),
-    Listen(Label),
+    Listen(TrapRef),
     SendMsg(Var, Var),
     Set(Flag, Tvalue),
     Trace(Var),
@@ -57,6 +62,7 @@ pub enum Exit {
 #[derive(Clone, Debug)]
 pub enum Rvalue {
     Var(Var),
+    Int(i32),
     Add(Var, Var),
     Sub(Var, Var),
     Div(Var, Var),
@@ -67,8 +73,8 @@ pub enum Rvalue {
     Spawn(Label, Vec<Var>),
     Splice(Vec<Var>),
     ListOf(Vec<Var>),
-    Const(ConstId),
-    ChoiceFromMenu(Var),
+    Const(ConstRef),
+    MenuChoice(Var),
     PidOfSelf,
 }
 

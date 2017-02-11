@@ -14,9 +14,9 @@ struct Builder {
     blocks: Vec<Block>,
 
     pc: usize,
+    closures: Vec<ast::TrapLambda>,
     bindings: Vec<(String, ir::Var)>,
     const_str: HashMap<String, ir::Var>,
-    const_int: HashMap<i32, ir::Var>,
     const_atom: HashMap<String, ir::Var>,
     next_temp_id: u32,
 
@@ -63,14 +63,16 @@ impl Block {
 
 impl Builder {
     fn create_block(&mut self, r: u32) -> Try<ir::Label> {
+        let id = self.blocks.len() as u32;
+
         let info = ir::BlockInfo {
-            id: self.blocks.len() as u32,
+            id: id,
             first_reg: r,
             flags_needed: 0,
         };
 
         self.blocks.push(Block::Partial(info, vec![]));
-        Ok(ir::Label(info.id))
+        Ok(ir::Label(id))
     }
 
     fn emit(&mut self, op: ir::Op) -> Try<()> {
@@ -100,9 +102,13 @@ impl Builder {
     }
 
     fn set(&mut self, value: ir::Tvalue) -> Try<ir::Flag> {
-        let counter = &mut self.current()?.info().flags_needed;
-        let flag = ir::Flag(*counter);
-        *counter += 1;
+        let flag = ir::Flag({
+            let counter = &mut self.current()?.info().flags_needed;
+            let val = *counter;
+            *counter += 1;
+            val
+        });
+
         self.emit(ir::Op::Set(flag, value))?;
         Ok(flag)
     }
@@ -120,10 +126,6 @@ impl Builder {
     }
 
     fn intern_str(&mut self, t: ast::Str) -> Try<ir::Var> {
-        ice!("Unimplemented")
-    }
-
-    fn intern_int(&mut self, t: i32) -> Try<ir::Var> {
         ice!("Unimplemented")
     }
 
@@ -163,7 +165,7 @@ impl Builder {
                 self.current()?.exit(ir::Exit::Goto(next))?;
 
                 self.jump(fail)?;
-                for stmt in success.0.into_iter() {
+                for stmt in failure.0.into_iter() {
                     self.tr_stmt(stmt)?;
                 }
                 self.current()?.exit(ir::Exit::Goto(next))?;
@@ -177,9 +179,31 @@ impl Builder {
                 Ok(())
             },
 
-            ast::Stmt::Listen { name, arms } => {
-                let target = self.tr_label(target)?;
-                self.emit(ir::Op::Listen(target))
+            ast::Stmt::LetFn { lambda, blocking } => {
+                let lambda = self.tr_lambda(lambda)?;
+                if blocking {
+                    self.emit(ir::Op::Listen(lambda))
+                } else {
+                    self.emit(ir::Op::Arm(lambda))
+                }
+            },
+
+            ast::Stmt::Recur { target } => {
+                let ast::Call(scene, args) = target;
+                let scene = self.tr_scene_name(scene)?;
+                let args = args.into_iter().map(|t| {
+                    self.tr_expr(t)
+                }).collect::<Try<_>>()?;
+                self.current()?.exit(ir::Exit::Recur(scene, args))
+            },
+
+            ast::Stmt::Return { result } => {
+                let result = match result {
+                    true => ir::Tvalue::True,
+                    false => ir::Tvalue::False,
+                };
+
+                self.current()?.exit(ir::Exit::Return(result))
             },
 
             ast::Stmt::SendMsg { message, target } => {
@@ -188,9 +212,22 @@ impl Builder {
                 self.emit(ir::Op::SendMsg(target, message))
             },
 
+            ast::Stmt::Trace { value } => {
+                let value = self.tr_expr(value)?;
+                self.emit(ir::Op::Trace(value))
+            },
+
             ast::Stmt::Wait { value } => {
                 let value = self.tr_expr(value)?;
                 self.emit(ir::Op::Wait(value))
+            },
+
+            ast::Stmt::Listen { .. }
+            | ast::Stmt::Match { .. }
+            | ast::Stmt::Naked { .. }
+            | ast::Stmt::Trap { .. }
+            | ast::Stmt::Weave { .. } => {
+                ice!("Syntax must be desugared before translation")
             },
         }
     }
@@ -199,7 +236,15 @@ impl Builder {
         match t {
             ast::Expr::Atom(a) => self.intern_atom(a),
             ast::Expr::Str(s) => self.intern_str(s),
-            ast::Expr::Int(i) => self.intern_int(i),
+
+            ast::Expr::Int(i) => {
+                self.assign_temp(ir::Rvalue::Int(i))
+            },
+
+            ast::Expr::Bool(b) => {
+                let flag = self.tr_cond(*b)?;
+                self.assign_temp(ir::Rvalue::FromBool(flag))
+            },
 
             ast::Expr::Id(id) => self.eval(&id.name),
 
@@ -233,8 +278,16 @@ impl Builder {
                 Ok(lhs)
             },
 
+            ast::Expr::MenuChoice(choices) => {
+                let choices = choices.into_iter().map(|t| {
+                    self.tr_expr(t)
+                }).collect::<Try<Vec<_>>>()?;
+                let list = self.assign_temp(ir::Rvalue::ListOf(choices))?;
+                self.assign_temp(ir::Rvalue::MenuChoice(list))
+            },
+
             ast::Expr::Nth(list, index) => {
-                let index = self.intern_int(index as i32)?;
+                let index = self.tr_expr(ast::Expr::Int(index as i32))?;
                 let list = self.tr_expr(*list)?;
                 self.assign_temp(ir::Rvalue::Nth(list, index))
             },
@@ -248,11 +301,11 @@ impl Builder {
             },
 
             ast::Expr::Splice(items) => {
-                let mut vars = Vec::with_capacity(items.len());
-                for item in items.into_iter() {
-                    vars.push(self.tr_expr(item)?);
-                }
-                self.assign_temp(ir::Rvalue::Splice(vars))
+                let items = items.into_iter().map(|item| {
+                    self.tr_expr(item)
+                }).collect::<Try<_>>()?;
+
+                self.assign_temp(ir::Rvalue::Splice(items))
             },
 
             ast::Expr::PidZero => ice!("Unimplemented"),
@@ -271,7 +324,7 @@ impl Builder {
 
             ast::Cond::HasLength(list, len) => {
                 let list = self.tr_expr(list)?;
-                let len = self.intern_int(len as i32)?;
+                let len = self.tr_expr(ast::Expr::Int(len as i32))?;
                 self.set(ir::Tvalue::HasLen(list, len))
             },
 
@@ -324,7 +377,24 @@ impl Builder {
         }
     }
 
+    fn tr_lambda(&mut self, t: ast::TrapLambda) -> Try<ir::TrapRef> {
+        let env = t.captures.iter().cloned().map(|id| {
+            self.eval(&id.name)
+        }).collect::<Try<_>>()?;
+
+        let label = self.tr_label(t.label)?;
+
+        Ok(ir::TrapRef {
+            label: label,
+            env: env,
+        })
+    }
+
     fn tr_label(&mut self, t: ast::Label) -> Try<ir::Label> {
+        ice!("Unimplemented")
+    }
+
+    fn tr_scene_name(&mut self, t: ast::SceneName) -> Try<ir::Label> {
         ice!("Unimplemented")
     }
 }

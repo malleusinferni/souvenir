@@ -97,6 +97,10 @@ pub trait Visitor {
                 self.visit_id_assign(name)?;
             },
 
+            &Stmt::LetFn { .. } => {
+                // TODO: Consider implementing this
+            },
+
             &Stmt::Listen { ref name, ref arms } => {
                 self.visit_label(name)?;
                 each(arms, |t| self.visit_trap_arm(t))?;
@@ -164,12 +168,20 @@ pub trait Visitor {
                 self.visit_string(string)
             },
 
+            &Expr::Bool(ref cond) => {
+                self.visit_cond(&cond)
+            },
+
             &Expr::Op(_, ref args) => {
                 each(args, |t| self.visit_expr(t))
             },
 
             &Expr::List(ref elems) => {
                 each(elems, |t| self.visit_expr(t))
+            },
+
+            &Expr::MenuChoice(ref items) => {
+                each(items, |t| self.visit_expr(t))
             },
 
             &Expr::Nth(ref expr, _) => {

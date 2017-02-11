@@ -6,55 +6,41 @@ use driver::Try;
 struct Pass;
 
 impl Pass {
-    fn rw_weave(&mut self, l: Label, a: Vec<WeaveArm>) -> Try<Vec<Stmt>> {
-        let mut stmts = Vec::with_capacity(a.len() + 4); // Or whatever
+    fn rw_weave(&mut self, l: Label, a: Vec<WeaveArm>) -> Try<Stmt> {
+        let mut choices = Vec::with_capacity(a.len());
         let mut arms = Vec::with_capacity(a.len());
 
-        // FIXME: This will deadlock if we use nested weaves.
-        // Find another way to express blocking IO here.
+        let mut or_else = Block(vec![]);
 
         for (i, arm) in a.into_iter().enumerate() {
-            let (test, tag) = match arm.guard {
-                Cond::LastResort => (Cond::True, Expr::Atom(Atom::LastResort)),
-                other => (other, Expr::Int(i as i32)),
+            let choice = match arm.guard {
+                Cond::LastResort => {
+                    or_else = arm.body;
+                    continue;
+                },
+
+                other => vec![
+                    Expr::Bool(Box::new(other)),
+                    Expr::Int(i as i32),
+                    arm.message,
+                ],
             };
 
-            let message = Expr::List(vec![ Expr::Atom(Atom::MenuItem), tag ]);
-
-            stmts.push(Stmt::If {
-                test: test,
-                success: Block(vec!{
-                    Stmt::SendMsg {
-                        target: Expr::PidZero,
-                        message: message.clone(),
-                    },
-                }),
-                failure: Block(vec![]),
-            });
-
-            arms.push(TrapArm {
-                pattern: Pat::Match(message),
-                origin: Pat::Match(Expr::PidZero),
+            arms.push(MatchArm {
+                pattern: Pat::Match(Expr::Int(i as i32)),
                 guard: Cond::True,
-                body: arm.body,
+                body: self.rw_block(arm.body)?,
             });
         }
 
-        stmts.push(Stmt::Trap {
-            name: l,
+        // FIXME: Do we still want weaves to have labels at all?
+        let _ = l;
+
+        Ok(Stmt::Match {
+            value: Expr::MenuChoice(choices),
             arms: arms,
-        });
-
-        stmts.push(Stmt::SendMsg {
-            target: Expr::PidZero,
-            message: Expr::List(vec![Expr::Atom(Atom::MenuEnd)]),
-        });
-
-        stmts.push(Stmt::Wait {
-            value: Expr::Infinity,
-        });
-
-        Ok(stmts)
+            or_else: or_else,
+        })
     }
 }
 
@@ -66,7 +52,7 @@ impl Rewriter for Pass {
         for stmt in input.into_iter() {
             match stmt {
                 Stmt::Weave { name, arms } => {
-                    output.extend(self.rw_weave(name, arms)?);
+                    output.push(self.rw_weave(name, arms)?);
                 },
 
                 other => output.push(self.rw_stmt(other)?),
