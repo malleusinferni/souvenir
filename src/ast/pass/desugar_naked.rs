@@ -3,8 +3,19 @@ use ast::rewrite::*;
 
 use driver::Try;
 
+impl Program {
+    pub fn desugar_naked(mut self) -> Try<Self> {
+        for &mut (_, ref mut module) in self.modules.iter_mut() {
+            module.reflow_text()?;
+        }
+
+        Ok(self)
+    }
+}
+
 impl Module {
     pub fn reflow_text(&mut self) -> Try<()> {
+        // I only did it this way for the sake of writing tests like below
         let mut scenes = Vec::with_capacity(self.scenes.len());
         for scene in self.scenes.drain(..) {
             let mut pass = Pass;

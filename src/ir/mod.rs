@@ -1,10 +1,18 @@
-#[derive(Copy, Clone, Debug, PartialEq)]
+pub mod pass;
+pub mod translate;
+
+#[derive(Clone, Debug)]
+pub struct Program {
+    blocks: Vec<Block>,
+}
+
+#[derive(Copy, Clone, Debug, Eq, Hash, PartialEq)]
 pub struct Var(pub u32);
 
 #[derive(Copy, Clone, Debug, PartialEq)]
 pub struct Flag(pub u32);
 
-#[derive(Copy, Clone, Debug, PartialEq)]
+#[derive(Copy, Clone, Debug, Eq, Hash, PartialEq)]
 pub struct Label(pub u32);
 
 #[derive(Copy, Clone, Debug, PartialEq)]
@@ -33,7 +41,19 @@ pub struct BlockInfo {
 #[derive(Clone, Debug)]
 pub struct TrapRef {
     pub label: Label,
-    pub env: Vec<Var>,
+    pub env: Var,
+}
+
+#[derive(Clone, Debug)]
+pub struct FnCall {
+    pub label: Label,
+    pub argv: Var,
+}
+
+#[derive(Clone, Debug)]
+pub struct Ptr {
+    pub start_addr: Var,
+    pub offset: u32,
 }
 
 #[derive(Clone, Debug)]
@@ -43,6 +63,8 @@ pub enum Op {
     Discard(Rvalue),
     Let(Var, Rvalue),
     Listen(TrapRef),
+    Print(Var),
+    Store(Var, Ptr),
     SendMsg(Var, Var),
     Set(Flag, Tvalue),
     Trace(Var),
@@ -55,7 +77,7 @@ pub enum Exit {
     EndProcess,
     Goto(Label),
     IfThenElse(Flag, Label, Label),
-    Recur(Label, Vec<Var>),
+    Recur(FnCall),
     Return(bool),
 }
 
@@ -68,11 +90,11 @@ pub enum Rvalue {
     Div(Var, Var),
     Mul(Var, Var),
     Roll(Var, Var),
-    Nth(Var, Var),
+    Load(Ptr),
     FromBool(Flag),
-    Spawn(Label, Vec<Var>),
+    Spawn(FnCall),
     Splice(Vec<Var>),
-    ListOf(Vec<Var>),
+    Alloc(u32),
     Const(ConstRef),
     MenuChoice(Var),
     PidOfSelf,
@@ -93,4 +115,22 @@ pub enum Tvalue {
     And(Vec<Flag>),
     Or(Vec<Flag>),
     Not(Flag),
+}
+
+impl Var {
+    pub fn at_offset(self, offset: u32) -> Ptr {
+        Ptr {
+            start_addr: self,
+            offset: offset,
+        }
+    }
+}
+
+impl Label {
+    pub fn with_argv(self, argv: Var) -> FnCall {
+        FnCall {
+            label: self,
+            argv: argv,
+        }
+    }
 }

@@ -5,6 +5,12 @@ use ir;
 
 use driver::Try;
 
+impl ast::Program {
+    pub fn translate(self) -> Try<ir::Program> {
+        let mut builder: Builder = ice!("Unimplemented");
+    }
+}
+
 enum Block {
     Partial(ir::BlockInfo, Vec<ir::Op>),
     Complete(ir::Block),
@@ -198,10 +204,8 @@ impl Builder {
             ast::Stmt::Recur { target } => {
                 let ast::Call(scene, args) = target;
                 let scene = self.tr_scene_name(scene)?;
-                let args = args.into_iter().map(|t| {
-                    self.tr_expr(t)
-                }).collect::<Try<_>>()?;
-                self.current()?.exit(ir::Exit::Recur(scene, args))
+                let argv = self.tr_expr(ast::Expr::List(args))?;
+                self.current()?.exit(ir::Exit::Recur(scene.with_argv(argv)))
             },
 
             ast::Stmt::Return { result } => {
@@ -251,11 +255,14 @@ impl Builder {
             ast::Expr::Id(id) => self.eval(&id.name),
 
             ast::Expr::List(items) => {
-                let mut vars = Vec::with_capacity(items.len());
-                for item in items.into_iter() {
-                    vars.push(self.tr_expr(item)?);
+                let len = items.len() as u32;
+                let list_ptr = self.assign_temp(ir::Rvalue::Alloc(len))?;
+                for (i, item) in items.into_iter().enumerate() {
+                    let item = self.tr_expr(item)?;
+                    let addr = list_ptr.at_offset(i as u32);
+                    self.emit(ir::Op::Store(item, addr))?;
                 }
-                self.assign_temp(ir::Rvalue::ListOf(vars))
+                Ok(list_ptr)
             },
 
             ast::Expr::Op(op, mut operands) => {
@@ -281,17 +288,13 @@ impl Builder {
             },
 
             ast::Expr::MenuChoice(choices) => {
-                let choices = choices.into_iter().map(|t| {
-                    self.tr_expr(t)
-                }).collect::<Try<Vec<_>>>()?;
-                let list = self.assign_temp(ir::Rvalue::ListOf(choices))?;
-                self.assign_temp(ir::Rvalue::MenuChoice(list))
+                let list_ptr = self.tr_expr(ast::Expr::List(choices))?;
+                self.assign_temp(ir::Rvalue::MenuChoice(list_ptr))
             },
 
             ast::Expr::Nth(list, index) => {
-                let index = self.tr_expr(ast::Expr::Int(index as i32))?;
                 let list = self.tr_expr(*list)?;
-                self.assign_temp(ir::Rvalue::Nth(list, index))
+                self.assign_temp(ir::Rvalue::Load(list.at_offset(index)))
             },
 
             ast::Expr::Spawn(call) => {
@@ -380,9 +383,13 @@ impl Builder {
     }
 
     fn tr_lambda(&mut self, t: ast::TrapLambda) -> Try<ir::TrapRef> {
-        let env = t.captures.iter().cloned().map(|id| {
-            self.eval(&id.name)
-        }).collect::<Try<_>>()?;
+        let env = {
+            let vars = t.captures.iter().cloned().map(|id| {
+                ast::Expr::Id(id)
+            }).collect::<Vec<_>>();
+
+            self.tr_expr(ast::Expr::List(vars))?
+        };
 
         let label = self.tr_label(t.label)?;
 

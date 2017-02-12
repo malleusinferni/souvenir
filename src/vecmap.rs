@@ -37,7 +37,7 @@ impl<K, V> VecMap<K, V> where K: IndexFor<V> {
         let key: Option<K> = CheckedFrom::checked_from(self.contents.len());
 
         if let Some(key) = key {
-            self.push(value);
+            self.contents.push(value);
             Ok(key)
         } else {
             Err(IndexErr::ReprOverflow(self.contents.len()))
@@ -63,6 +63,7 @@ impl<K, V> AsRef<[V]> for VecMap<K, V> where K: IndexFor<V> {
     }
 }
 
+#[derive(Debug)]
 pub enum IndexErr<K> {
     OutOfBounds(K),
     ReprOverflow(usize),

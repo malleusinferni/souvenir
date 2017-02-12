@@ -3,6 +3,12 @@ use ast::rewrite::*;
 
 use driver::Try;
 
+impl Program {
+    pub fn desugar_trap(self) -> Try<Self> {
+        (Pass { next_sym: 0 }).rw_program(self)
+    }
+}
+
 struct Pass {
     next_sym: u32,
 }

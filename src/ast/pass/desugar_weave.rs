@@ -3,6 +3,12 @@ use ast::rewrite::*;
 
 use driver::Try;
 
+impl Program {
+    pub fn desugar_weave(self) -> Try<Self> {
+        Pass.rw_program(self)
+    }
+}
+
 struct Pass;
 
 impl Pass {

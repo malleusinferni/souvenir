@@ -4,6 +4,8 @@ use std::path::Path;
 
 use ast::{self, Program, Modpath, Module, ParseErr};
 
+use vm;
+
 macro_rules! ice {
     ( $( $arg:tt )* ) => {
         return Err(::driver::ICE(format!($($arg)*)).into())
@@ -133,10 +135,20 @@ impl Program {
         })
     }
 
-    pub fn compile(self) -> Result<Self, CompileErr> {
+    pub fn desugar(self) -> Result<Self, CompileErr> {
+        self.desugar_naked()?
+            .desugar_weave()?
+            .desugar_listen()?
+            .desugar_trap()?
+            .desugar_match()
+    }
+
+    pub fn compile(mut self) -> Result<vm::Program, CompileErr> {
         self.check_names()?;
         self.check_prelude_restrictions()?;
-        Ok(self)
+        let ir = self.desugar()?.translate()?;
+        let bytecode = ir.translate()?;
+        Ok(bytecode)
     }
 }
 
