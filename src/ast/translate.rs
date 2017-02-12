@@ -10,6 +10,11 @@ enum Block {
     Complete(ir::Block),
 }
 
+enum Func {
+    Scene(ast::QfdSceneName),
+    Lambda(ast::QfdLabel),
+}
+
 struct Builder {
     blocks: Vec<Block>,
 
@@ -21,6 +26,8 @@ struct Builder {
     next_temp_id: u32,
 
     preludes: HashMap<ast::Modpath, ir::Label>,
+    scenes: HashMap<ast::QfdSceneName, ir::Label>,
+    labels: HashMap<ast::QfdLabel, ir::Label>,
 }
 
 impl Block {
@@ -198,11 +205,6 @@ impl Builder {
             },
 
             ast::Stmt::Return { result } => {
-                let result = match result {
-                    true => ir::Tvalue::True,
-                    false => ir::Tvalue::False,
-                };
-
                 self.current()?.exit(ir::Exit::Return(result))
             },
 

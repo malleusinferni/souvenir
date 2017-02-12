@@ -1,3 +1,5 @@
+use vecmap::{self, VecMap};
+
 use vm::*;
 
 #[derive(Clone, Debug, Default)]
@@ -18,7 +20,7 @@ pub struct Process {
     pub op: Instr,
 
     /// Next instruction to be executed.
-    pub pc: Address,
+    pub pc: InstrAddr,
 }
 
 #[derive(Copy, Clone, Debug)]
@@ -45,7 +47,7 @@ pub struct Stack {
 #[derive(Clone, Debug)]
 pub struct TrapState {
     /// Return address to restore execution when the last handler exits.
-    pub ra: Address,
+    pub ra: InstrAddr,
 
     /// Index on the heap of the message to handle.
     pub arg: Value,
@@ -69,7 +71,7 @@ pub enum Argvec<'a> {
 #[derive(Clone, Debug)]
 pub struct TrapCall {
     next: Vec<Trap>,
-    ra: Address,
+    ra: InstrAddr,
     arg: Value,
 }
 
@@ -107,7 +109,7 @@ pub enum RunErr {
     StackUnderflow,
     NoSuchLabel(Label),
     IllegalInstr(Instr),
-    BadFetch(Address),
+    BadFetch(InstrAddr),
     WrongType(Value, TypeTag),
     IncomparableTypes(TypeTag, TypeTag),
     DividedByZero,
@@ -116,10 +118,11 @@ pub enum RunErr {
 pub type Ret<T> = Result<T, RunErr>;
 
 impl Process {
-    pub fn exec(&mut self, jump_table: &[Address]) -> Ret<()> {
+    pub fn exec(&mut self, jump_table: &JumpTable) -> Ret<()> {
         match self.op {
             Instr::Nop => (),
 
+            /*
             Instr::Compare(rel) => {
                 let rhs = self.stack.pop()?;
                 let lhs = self.stack.pop()?;
@@ -128,12 +131,12 @@ impl Process {
             },
 
             Instr::Jump(label) => {
-                self.jump(label, jump_table)?;
+                self.jump(*jump_table.get(label)?)?;
             },
 
             Instr::JumpIf(label) => {
                 if self.stack.pop()?.as_bool()? {
-                    self.jump(label, jump_table)?;
+                    self.jump(*jump_table.get(label)?)?;
                 }
             },
 
@@ -150,9 +153,13 @@ impl Process {
                 self.traps.retain(|trap| { trap.label != label })
             },
 
-            Instr::TrapReject => {
+            Instr::Return(result) => {
                 let mut ts: TrapState = self.stack.leave()?;
                 self.pc = ts.ra;
+
+                if result {
+                    return Ok(())
+                }
 
                 if let Some(Trap { label, env }) = ts.next.pop() {
                     self.stack.enter(TrapCall {
@@ -164,13 +171,8 @@ impl Process {
                     self.stack.push(ts.arg)?;
                     self.stack.write()?;
 
-                    self.jump(label, jump_table)?;
+                    self.jump(*jump_table.get(label)?)?;
                 }
-            },
-
-            Instr::TrapResume => {
-                let ts: TrapState = self.stack.leave()?;
-                self.pc = ts.ra;
             },
 
             Instr::PushVar(StackAddr(u)) => {
@@ -199,6 +201,7 @@ impl Process {
                 let addr = self.heap.write(&contents)?;
                 self.stack.push(addr)?;
             },
+            */
 
             _ => unimplemented!(),
         }
@@ -206,6 +209,7 @@ impl Process {
         Ok(())
     }
 
+    /*
     fn compare(&self, lhs: Value, rel: Relation, rhs: Value) -> Ret<Value> {
         let ltype = lhs.type_tag();
         let rtype = rhs.type_tag();
@@ -219,7 +223,7 @@ impl Process {
                 Relation::Greater => m > n,
             },
 
-            (HeapListAddr(m), HeapListAddr(n)) => {
+            (ListAddr(m), ListAddr(n)) => {
                 let lhs = self.heap.read(m as usize)?;
                 let rhs = self.heap.read(n as usize)?;
                 match rel {
@@ -246,24 +250,17 @@ impl Process {
 
         Ok(true)
     }
+    */
 
-    pub fn jump(&mut self, label: Label, jump_table: &[Address]) -> Ret<()> {
-        let Label(u) = label;
-        let &addr = jump_table.get(u as usize)
-            .ok_or(RunErr::NoSuchLabel(label))?;
+    pub fn jump(&mut self, addr: InstrAddr) -> Ret<()> {
         self.pc = addr;
 
         Ok(())
     }
 
-    pub fn fetch(&mut self, code: &[Instr]) -> Ret<()> {
-        let Address(i) = self.pc;
-
-        self.op = *code.get(i as usize)
-            .ok_or(RunErr::BadFetch(self.pc))?;
-
+    pub fn fetch(&mut self, code: &VecMap<InstrAddr, Instr>) -> Ret<()> {
+        self.op = *code.get(self.pc)?;
         self.pc.0 += 1;
-
         Ok(())
     }
 
@@ -294,7 +291,7 @@ impl Process {
 
     pub fn local_copy(&mut self, v: Value, other: &Process) -> Ret<Value> {
         match v {
-            Value::HeapListAddr(u) => {
+            Value::ListAddr(u) => {
                 let list = other.heap.read(u as usize)?;
                 let mut buf = Vec::with_capacity(list.len());
                 for &value in list {
@@ -303,7 +300,7 @@ impl Process {
                 self.heap.write(&buf)
             },
 
-            Value::HeapStrAddr(u) => {
+            Value::StrAddr(u) => {
                 let string = other.strings.read(u as usize)?;
                 self.strings.write(string.to_owned())
             },
@@ -312,7 +309,7 @@ impl Process {
         }
     }
 
-    pub fn start(&mut self, label: Label, args: Argvec, env: Option<&Process>, jump_table: &[Address]) -> Ret<()> {
+    pub fn start(&mut self, label: Label, args: Argvec, env: Option<&Process>, jump_table: &JumpTable) -> Ret<()> {
         self.stack.reset();
         self.heap.reset();
         self.strings.reset();
@@ -329,7 +326,7 @@ impl Process {
         let _argc = self.get_fn_args(args)?;
         // TODO: Check the arg count
 
-        self.jump(label, jump_table)?;
+        self.jump(*jump_table.get(label)?)?;
 
         Ok(())
     }
@@ -451,6 +448,7 @@ impl Stack {
         }
     }
 
+    /*
     pub fn eval(&mut self, f: StackFn) -> Ret<()> {
         match f {
             StackFn::Add => {
@@ -497,6 +495,7 @@ impl Stack {
             },
         }
     }
+    */
 
     pub fn reset(&mut self) {
         self.contents.clear();
@@ -510,7 +509,7 @@ impl Heap {
         let addr = self.contents.len() as u32;
         self.contents.push(Value::Int(values.len() as i32));
         self.contents.extend_from_slice(values);
-        Ok(Value::HeapListAddr(addr))
+        Ok(Value::ListAddr(addr))
     }
 
     pub fn read(&self, addr: usize) -> Ret<&[Value]> {
@@ -520,7 +519,7 @@ impl Heap {
         let start = addr + 1;
 
         let length = match header {
-            Value::Int(n) if n >= 0 => Ok(n as usize),
+            Value::ListHeader(n) => Ok(n as usize),
             _ => Err(RunErr::CorruptionIn(AddrSpace::Heap)),
         }?;
 
@@ -540,7 +539,7 @@ impl Streap {
     pub fn write(&mut self, s: String) -> Ret<Value> {
         let addr = self.contents.len() as u32;
         self.contents.push(s);
-        Ok(Value::HeapStrAddr(addr))
+        Ok(Value::StrAddr(addr))
     }
 
     pub fn read(&self, addr: usize) -> Ret<&str> {
@@ -582,16 +581,17 @@ impl Value {
 
     pub fn as_list_addr(self) -> Ret<usize> {
         match self {
-            Value::HeapListAddr(n) => Ok(n as usize),
+            Value::ListAddr(n) => Ok(n as usize),
             other => Err(RunErr::WrongType(other, TypeTag::List)),
         }
     }
 
     pub fn type_tag(self) -> TypeTag {
         match self {
-            Value::HeapStrAddr(_) => TypeTag::Str,
-            Value::ConstStrId(_) => TypeTag::Str,
-            Value::HeapListAddr(_) => TypeTag::List,
+            Value::StrAddr(_) => TypeTag::Str,
+            Value::StrConst(_) => TypeTag::Str,
+            Value::ListAddr(_) => TypeTag::List,
+            Value::ListHeader(_) => TypeTag::List,
             Value::Int(_) => TypeTag::Integer,
             Value::Atom(_) => TypeTag::Atom,
             Value::ActorId(_) => TypeTag::ActorId,
@@ -610,5 +610,23 @@ impl Instr {
 
     pub fn illegal(self) -> RunErr {
         RunErr::IllegalInstr(self)
+    }
+}
+
+impl From<vecmap::IndexErr<Label>> for RunErr {
+    fn from(err: vecmap::IndexErr<Label>) -> Self {
+        match err {
+            vecmap::IndexErr::OutOfBounds(label) => RunErr::NoSuchLabel(label),
+            _ => unimplemented!(),
+        }
+    }
+}
+
+impl From<vecmap::IndexErr<InstrAddr>> for RunErr {
+    fn from(err: vecmap::IndexErr<InstrAddr>) -> Self {
+        match err {
+            vecmap::IndexErr::OutOfBounds(addr) => RunErr::BadFetch(addr),
+            _ => unimplemented!(),
+        }
     }
 }

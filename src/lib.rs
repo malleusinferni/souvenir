@@ -7,6 +7,8 @@ pub mod ast;
 pub mod ir;
 pub mod vm;
 
+pub mod vecmap;
+
 #[test]
 fn parse_examples() {
     use ast::Module;

@@ -1,46 +1,53 @@
 pub mod eval;
 
+use vecmap::*;
+
 #[derive(Clone, Debug)]
 pub struct Program {
     /// String constants in shared memory.
-    pub strings: Vec<String>,
+    pub strings: VecMap<StrId, String>,
 
     /// Instructions from all blocks.
-    pub code: Vec<Instr>,
+    pub code: VecMap<InstrAddr, Instr>,
 
-    /// Maps `Label`s to indices into `code`.
-    pub labels: Vec<Address>,
+    /// Lookup table for the destinations of jump instructions.
+    pub jump_table: VecMap<Label, InstrAddr>,
 
-    /// Maps `Label`s to function information.
-    pub funcdefs: Vec<FuncDef>,
+    /// Lookup table for function calling conventions.
+    pub funcdefs: VecMap<Label, FuncDef>,
 
     /// Pre-evaluated environments for module-scoped variables.
-    pub modenvs: Vec<eval::Process>,
+    pub modenvs: VecMap<ModuleID, eval::Process>,
 }
-
-#[derive(Copy, Clone, Debug, Default)]
-pub struct Address(pub u32);
 
 #[derive(Copy, Clone, Debug)]
 pub enum Instr {
-    Eval(StackFn),
-    Write,
-    Enclose,
-    Compare(Relation),
-    Trim(StackAddr),
-    PushLit(Value),
-    PushVar(StackAddr),
+    Add(Reg, Reg),
+    Sub(Reg, Reg),
+    Div(Reg, Reg),
+    Mul(Reg, Reg),
+    Eql(Reg, Reg, Flag),
+    Gte(Reg, Reg, Flag),
+    Lte(Reg, Reg, Flag),
+    Gt(Reg, Reg, Flag),
+    Lt(Reg, Reg, Flag),
+    And(Flag, Flag),
+    Or(Flag, Flag),
+    Not(Flag),
+    LoadLit(Value, Reg),
+    Alloc(ListLen, Reg),
+    Read(ListRef, Reg),
+    Write(Reg, ListRef),
     Jump(Label),
-    JumpIf(Label),
-    Spawn(Label),
-    Recur(Label),
-    Native(NativeFn),
-    SendMessage(StackAddr),
+    JumpIf(Label, Flag),
+    Spawn(Reg, Label, Reg),
+    Recur(Reg, Label),
+    Native(Reg, NativeFn, Reg),
+    SendMsg(Reg, Reg),
     Sleep(f32),
-    TrapInstall(Label),
-    TrapRemove(Label),
-    TrapReject,
-    TrapResume,
+    Arm(Reg, Label),
+    Disarm(Label),
+    Return(bool),
     Nop,
     Bye,
     Hcf,
@@ -51,27 +58,10 @@ pub enum Value {
     Int(i32),
     Atom(u32),
     ActorId(u32),
-    ConstStrId(u32),
-    HeapStrAddr(u32),
-    HeapListAddr(u32),
-}
-
-#[derive(Copy, Clone, Debug)]
-pub enum StackFn {
-    Add,
-    Sub,
-    Div,
-    Mul,
-    Not,
-    Swap,
-    Discard,
-}
-
-#[derive(Copy, Clone, Debug)]
-pub enum Relation {
-    Greater,
-    Lesser,
-    Equal,
+    StrConst(StrId),
+    StrAddr(u32),
+    ListAddr(u32),
+    ListHeader(u32),
 }
 
 #[derive(Copy, Clone, Debug)]
@@ -81,14 +71,19 @@ pub enum NativeFn {
     Custom(u32),
 }
 
-#[derive(Copy, Clone, Debug)]
-pub struct StackAddr(pub u32);
+#[derive(Copy, Clone, Debug, PartialEq)]
+pub struct ListLen(pub u32);
 
 #[derive(Copy, Clone, Debug, PartialEq)]
-pub struct Label(pub u32);
+pub struct ListRef {
+    ptr: Reg,
+    offset: u32,
+}
+
+pub type JumpTable = VecMap<Label, InstrAddr>;
 
 #[derive(Copy, Clone, Debug)]
-pub struct ModuleID(pub u32);
+pub struct StackAddr(u32);
 
 #[derive(Copy, Clone, Debug)]
 pub struct FuncDef {
@@ -99,6 +94,38 @@ pub struct FuncDef {
 impl Default for Instr {
     fn default() -> Self { Instr::Nop }
 }
+
+macro_rules! index_via_u32 {
+    ( $name:ident, $( $value:ty ),* ) => {
+        #[derive(Copy, Clone, Debug, Default, PartialEq)]
+        pub struct $name(pub u32);
+
+        impl From<$name> for usize {
+            fn from($name(u): $name) -> Self {
+                u as usize
+            }
+        }
+
+        impl CheckedFrom<usize> for $name {
+            fn checked_from(u: usize) -> Option<Self> {
+                if u > u32::max_value() as usize {
+                    None
+                } else {
+                    Some($name(u as u32))
+                }
+            }
+        }
+
+        $( impl IndexFor<$value> for $name {} )*
+    };
+}
+
+index_via_u32!(Label, InstrAddr, ModuleID, FuncDef);
+index_via_u32!(InstrAddr, Instr);
+index_via_u32!(Reg, Value);
+index_via_u32!(Flag, bool);
+index_via_u32!(StrId, String);
+index_via_u32!(ModuleID, eval::Process);
 
 #[cfg(test)]
 pub mod example {
@@ -171,7 +198,7 @@ pub mod example {
         ];
 
         let labels = &[
-            Address(9),
+            InstrAddr(9),
         ];
 
         for _ in code {

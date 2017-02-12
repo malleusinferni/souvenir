@@ -56,7 +56,7 @@ pub enum Exit {
     Goto(Label),
     IfThenElse(Flag, Label, Label),
     Recur(Label, Vec<Var>),
-    Return(Tvalue),
+    Return(bool),
 }
 
 #[derive(Clone, Debug)]
