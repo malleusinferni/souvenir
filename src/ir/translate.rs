@@ -59,8 +59,55 @@ impl Translator {
     }
 
     fn tr_op(&mut self, t: ir::Op) -> Try<()> {
+        type Binop = fn(vm::Reg, vm::Reg) -> vm::Instr;
+
+        let tr_binop = |this: &mut Self, op: Binop, l, r, dst| {
+            let l = this.tr_var(l)?;
+            let r = this.tr_var(r)?;
+            let dst = this.tr_var(dst)?;
+            if l != r && l != dst {
+                this.emit(vm::Instr::Cpy(l, dst))?;
+            }
+            this.emit(op(r, dst))
+        };
+
         match t {
-            _ => ice!("Unimplemented")
+            ir::Op::Let(dst, value) => match value {
+                ir::Rvalue::Var(src) => {
+                    let dst = self.tr_var(dst)?;
+                    let src = self.tr_var(src)?;
+                    if src != dst {
+                        self.emit(vm::Instr::Cpy(src, dst))
+                    } else {
+                        Ok(())
+                    }
+                },
+
+                ir::Rvalue::Int(i) => {
+                    let dst = self.tr_var(dst)?;
+                    self.emit(vm::Instr::LoadLit(vm::Value::Int(i), dst))
+                },
+
+                ir::Rvalue::Add(lhs, rhs) => {
+                    tr_binop(self, vm::Instr::Add, lhs, rhs, dst)
+                },
+
+                ir::Rvalue::Sub(lhs, rhs) => {
+                    tr_binop(self, vm::Instr::Sub, lhs, rhs, dst)
+                },
+
+                ir::Rvalue::Div(lhs, rhs) => {
+                    tr_binop(self, vm::Instr::Div, lhs, rhs, dst)
+                },
+
+                ir::Rvalue::Mul(lhs, rhs) => {
+                    tr_binop(self, vm::Instr::Mul, lhs, rhs, dst)
+                },
+
+                _ => ice!("Unimplemented"),
+            },
+
+            _ => ice!("Unimplemented"),
         }
     }
 

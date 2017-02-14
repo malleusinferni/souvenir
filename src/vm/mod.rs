@@ -22,6 +22,7 @@ pub struct Program {
 
 #[derive(Copy, Clone, Debug)]
 pub enum Instr {
+    Cpy(Reg, Reg),
     Add(Reg, Reg),
     Sub(Reg, Reg),
     Div(Reg, Reg),
