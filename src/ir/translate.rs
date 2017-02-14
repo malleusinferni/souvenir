@@ -125,7 +125,7 @@ impl Translator {
             ir::Exit::IfThenElse(flag, succ, fail) => {
                 let flag = self.tr_flag(flag)?;
                 let succ = self.tr_label(succ)?;
-                self.emit(vm::Instr::JumpIf(succ, flag))?;
+                self.emit(vm::Instr::JumpIf(flag, succ))?;
                 let fail = self.tr_label(fail)?;
                 self.emit(vm::Instr::Jump(fail))
             },
