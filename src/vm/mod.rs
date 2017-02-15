@@ -1,15 +1,46 @@
+use std::collections::{HashMap, VecDeque};
+
+use string_interner::{StringInterner, NonNegative};
+
 use vecmap::*;
 
+/// Entry point to the interpreter API.
+pub struct Scheduler {
+    running: HashMap<ActorId, Box<Process>>,
+    sleeping: HashMap<ActorId, Box<Process>>,
+    dead: HashMap<ActorId, Box<Process>>,
+    program: Program,
+    workspace: VecDeque<(ActorId, Box<Process>)>,
+}
+
+/// Program data marshalled for use by the host environment.
+#[derive(Clone, Debug)]
+pub enum RawValue {
+    ActorId(ActorId),
+    Atom(String),
+    Int(i32),
+    Str(String),
+    List(Vec<RawValue>),
+}
+
+/// Opaque key into the supervisor's list of processes.
+#[derive(Copy, Clone, Debug, Eq, Hash, PartialEq)]
+pub struct ActorId(u32);
+
+/// Executable program
 #[derive(Clone, Debug)]
 pub struct Program {
-    /// String constants in shared memory.
-    pub strings: VecMap<StrId, String>,
-
     /// Instructions from all blocks.
     pub code: VecMap<InstrAddr, Instr>,
 
     /// Lookup table for the destinations of jump instructions.
     pub jump_table: VecMap<Label, InstrAddr>,
+
+    /// Interned atoms.
+    pub atom_table: StringInterner<AtomId>,
+
+    /// Interned (global) string constants.
+    pub str_table: StringInterner<StrId>,
 }
 
 /// Unencoded (immediately executable) VM instructions.
@@ -40,30 +71,39 @@ pub enum Instr {
     Write(Reg, Ptr),
     Jump(Label),
     JumpIf(Flag, Label),
-    Spawn(Reg, Label, Reg),
     Recur(Reg, Label),
-    Native(Reg, NativeFn, Reg),
-    SendMsg(Reg, Reg),
-    GetPid(Reg),
-    Roll(Reg, Reg),
-    Sleep(f32),
     Arm(Reg, Label),
     Disarm(Label),
     Return(bool),
+    Blocking(Io),
     Nop,
     Bye,
     Hcf,
 }
 
+/// Instructions representing blocking IO operations.
+#[derive(Copy, Clone, Debug)]
+pub enum Io {
+    GetPid(Reg),
+    SendMsg(Reg, Reg),
+    Roll(Reg, Reg),
+    Sleep(f32),
+    ArmAtomic(Reg, Label),
+    Spawn(Reg, Label, Reg),
+    Native(Reg, NativeFn, Reg),
+    Say(Reg),
+}
+
 #[derive(Copy, Clone, Debug, PartialEq)]
 pub enum Value {
     Int(i32),
-    Atom(u32),
-    ActorId(u32),
+    Atom(AtomId),
+    ActorId(ActorId),
     StrConst(StrId),
     StrAddr(u32),
     ListAddr(HeapAddr),
     Capacity(u32),
+    Undefined,
 }
 
 #[derive(Copy, Clone, Debug, PartialEq)]
@@ -73,6 +113,7 @@ pub enum TypeTag {
     Actor,
     Str,
     List,
+    Undef,
 }
 
 #[derive(Copy, Clone, Debug)]
@@ -200,19 +241,33 @@ index_via_u32!(InstrAddr, Instr);
 index_via_u32!(Reg, Value);
 index_via_u32!(HeapAddr, Value);
 index_via_u32!(Flag, bool);
-index_via_u32!(StrId, String);
 
-impl Value {
-    pub fn tag(&self) -> TypeTag {
-        match self {
-            &Value::Int(_) => TypeTag::Int,
-            &Value::Atom(_) => TypeTag::Atom,
-            &Value::ActorId(_) => TypeTag::Actor,
-            &Value::StrConst(_) | &Value::StrAddr(_) => TypeTag::Str,
-            &Value::ListAddr(_) | &Value::Capacity(_) => TypeTag::List,
+macro_rules! symbol_via_u32 {
+    ( $name:ident ) => {
+        #[derive(Copy, Clone, Debug, Eq, Ord, PartialEq, PartialOrd)]
+        pub struct $name(pub u32);
+
+        impl From<$name> for usize {
+            fn from($name(u): $name) -> Self {
+                u as usize
+            }
         }
-    }
+
+        impl From<usize> for $name {
+            fn from(u: usize) -> Self {
+                $name(u as u32)
+            }
+        }
+
+        impl NonNegative for $name { }
+
+        // Blanket implementation automatically satisfied
+        //impl Symbol for $name { }
+    };
 }
+
+symbol_via_u32!(AtomId);
+symbol_via_u32!(StrId);
 
 impl Stack {
     fn current(&mut self) -> &mut StackFrame {
@@ -282,7 +337,7 @@ impl Heap {
         let addr = HeapAddr(self.values.len() as u32);
         self.values.push(len.into());
         for _ in 0 .. len.0 {
-            self.values.push(Value::Atom(0));
+            self.values.push(Value::Undefined);
         }
         Ok(addr)
     }
@@ -477,8 +532,13 @@ impl Process {
                 self.traps.retain(|trap| trap.label != label);
             },
 
-            // Can't execute other instructions by ourselves
-            _ => return Err(RunErr::IllegalInstr(self.op)),
+            Instr::Recur(argv, label) => {
+                unimplemented!()
+            },
+
+            Instr::Blocking(_) | Instr::Bye | Instr::Hcf => {
+                return Err(RunErr::IllegalInstr(self.op))
+            },
         }
 
         Ok(())
@@ -499,9 +559,78 @@ impl Process {
 
         Ok(())
     }
+
+    pub fn fetch(&mut self, program: &Program) -> Ret<()> {
+        self.op = *program.code.get(self.pc)?;
+        self.pc.0 += 1;
+        Ok(())
+    }
+
+    fn is_blocked(&self) -> Ret<bool> {
+        match self.op {
+            Instr::Hcf => Err(RunErr::IllegalInstr(self.op)),
+
+            Instr::Bye | Instr::Blocking(_) => {
+                Ok(true)
+            },
+
+            _ => Ok(false),
+        }
+    }
+
+    fn run(&mut self, program: &Program) -> Ret<bool> {
+        const SOME_SMALL_NUMBER: usize = 100;
+
+        for _ in 0 .. SOME_SMALL_NUMBER {
+            self.exec(program)?;
+
+            if self.is_blocked()? {
+                return Ok(true);
+            }
+
+            self.fetch(program)?;
+        }
+
+        Ok(false)
+    }
+}
+
+impl Scheduler {
+    pub fn dispatch(&mut self) {
+        // FIXME: This isn't a very good scheduler.
+
+        self.workspace.extend(self.running.drain());
+        let num_running = self.workspace.len();
+        self.workspace.extend(self.sleeping.drain());
+
+        for (i, (id, mut process)) in self.workspace.drain(..).enumerate() {
+            match process.run(&self.program) {
+                Ok(false) => self.running.insert(id, process),
+                Ok(true) => self.sleeping.insert(id, process),
+                Err(_) => self.dead.insert(id, process),
+            };
+
+            if i + 1 >= num_running { break; }
+        }
+
+        for (id, mut process) in self.workspace.drain(..) {
+            unimplemented!()
+        }
+    }
 }
 
 impl Value {
+    pub fn tag(&self) -> TypeTag {
+        match self {
+            &Value::Int(_) => TypeTag::Int,
+            &Value::Atom(_) => TypeTag::Atom,
+            &Value::ActorId(_) => TypeTag::Actor,
+            &Value::StrConst(_) | &Value::StrAddr(_) => TypeTag::Str,
+            &Value::ListAddr(_) | &Value::Capacity(_) => TypeTag::List,
+            &Value::Undefined => TypeTag::Undef,
+        }
+    }
+
     pub fn as_int(self) -> Ret<i32> {
         match self {
             Value::Int(i) => Ok(i),
@@ -543,6 +672,15 @@ impl From<IndexErr<Label>> for RunErr {
     fn from(err: IndexErr<Label>) -> Self {
         match err {
             IndexErr::OutOfBounds(k) => RunErr::NoSuchLabel(k),
+            IndexErr::ReprOverflow(u) => RunErr::Unrepresentable(u),
+        }
+    }
+}
+
+impl From<IndexErr<InstrAddr>> for RunErr {
+    fn from(err: IndexErr<InstrAddr>) -> Self {
+        match err {
+            IndexErr::OutOfBounds(k) => RunErr::FetchOutOfBounds(k),
             IndexErr::ReprOverflow(u) => RunErr::Unrepresentable(u),
         }
     }

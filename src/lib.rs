@@ -1,5 +1,6 @@
 extern crate rand;
 extern crate lalrpop_util;
+extern crate string_interner;
 
 #[macro_use]
 pub mod driver;
