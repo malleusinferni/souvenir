@@ -138,7 +138,19 @@ pub struct Process {
 
 #[derive(Copy, Clone, Debug)]
 pub enum RunErr {
-    Generic,
+    StackOverflow,
+    StackUnderflow,
+    NoSuchRegister(Reg),
+    NoSuchFlag(Flag),
+    NoSuchLabel(Label),
+    FetchOutOfBounds(InstrAddr),
+    IllegalInstr(Instr),
+    UnallocatedAccess(usize),
+    HeapCorrupted(Value),
+    ListOutOfBounds(usize, u32),
+    TypeMismatch(Value, TypeTag),
+    DividedByZero,
+    Unrepresentable(usize),
 }
 
 pub type Ret<T> = Result<T, RunErr>;
@@ -213,7 +225,7 @@ impl Stack {
 
     fn push(&mut self, cc: Continuation) -> Ret<()> {
         if self.upper.is_some() {
-            Err(RunErr::Generic)
+            Err(RunErr::StackOverflow)
         } else {
             self.upper = Some(cc);
             Ok(())
@@ -221,7 +233,7 @@ impl Stack {
     }
 
     fn pop(&mut self) -> Ret<Continuation> {
-        self.upper.take().ok_or(RunErr::Generic)
+        self.upper.take().ok_or(RunErr::StackUnderflow)
     }
 }
 
@@ -231,7 +243,7 @@ impl StackFrame {
         if i < REG_COUNT {
             Ok(self.gpr[i])
         } else {
-            Err(RunErr::Generic)
+            Err(RunErr::NoSuchRegister(r))
         }
     }
 
@@ -241,7 +253,7 @@ impl StackFrame {
             self.gpr[i] = v;
             Ok(())
         } else {
-            Err(RunErr::Generic)
+            Err(RunErr::NoSuchRegister(r))
         }
     }
 
@@ -250,7 +262,7 @@ impl StackFrame {
         if i < REG_COUNT {
             Ok(self.flag[i])
         } else {
-            Err(RunErr::Generic)
+            Err(RunErr::NoSuchFlag(f))
         }
     }
 
@@ -260,7 +272,7 @@ impl StackFrame {
             self.flag[i] = v;
             Ok(())
         } else {
-            Err(RunErr::Generic)
+            Err(RunErr::NoSuchFlag(f))
         }
     }
 }
@@ -277,15 +289,17 @@ impl Heap {
 
     fn check_bounds(&self, addr: HeapAddr, offset: u32) -> Ret<usize> {
         let addr: usize = addr.into();
-        let header = *self.values.get(addr).ok_or(RunErr::Generic)?;
+        let header = *self.values.get(addr)
+            .ok_or(RunErr::UnallocatedAccess(addr))?;
+
         if let Value::Capacity(c) = header {
             if c > offset {
                 Ok(addr + offset as usize)
             } else {
-                Err(RunErr::Generic)
+                Err(RunErr::HeapCorrupted(header))
             }
         } else {
-            Err(RunErr::Generic)
+            Err(RunErr::ListOutOfBounds(addr, offset))
         }
     }
 
@@ -331,7 +345,7 @@ impl Process {
                 let lhs = frame.get(dst)?.as_int()?;
                 let rhs = frame.get(src)?.as_int()?;
                 if rhs == 0 {
-                    return Err(RunErr::Generic);
+                    return Err(RunErr::DividedByZero);
                 } else {
                     frame.set(dst, (lhs / rhs).into())?;
                 }
@@ -441,7 +455,7 @@ impl Process {
             },
 
             Instr::Return(finished) => {
-                let mut cc = self.stack.pop()?;
+                let cc = self.stack.pop()?;
                 self.pc = cc.return_addr;
 
                 if !finished {
@@ -464,7 +478,7 @@ impl Process {
             },
 
             // Can't execute other instructions by ourselves
-            _ => return Err(RunErr::Generic),
+            _ => return Err(RunErr::IllegalInstr(self.op)),
         }
 
         Ok(())
@@ -480,6 +494,7 @@ impl Process {
         cc.frame.gpr[1] = cc.message;
         cc.frame.gpr[2] = cc.sender;
 
+        self.stack.push(cc)?;
         self.pc = *program.jump_table.get(trap.label)?;
 
         Ok(())
@@ -487,21 +502,21 @@ impl Process {
 }
 
 impl Value {
-    fn as_int(self) -> Ret<i32> {
+    pub fn as_int(self) -> Ret<i32> {
         match self {
             Value::Int(i) => Ok(i),
-            _ => Err(RunErr::Generic),
+            _ => Err(RunErr::TypeMismatch(self, TypeTag::Int)),
         }
     }
 
-    fn as_bool(self) -> Ret<bool> {
+    pub fn as_bool(self) -> Ret<bool> {
         Ok(self.as_int()? != 0)
     }
 
     fn as_addr(self) -> Ret<HeapAddr> {
         match self {
             Value::ListAddr(addr) => Ok(addr),
-            _ => Err(RunErr::Generic),
+            _ => Err(RunErr::TypeMismatch(self, TypeTag::List)),
         }
     }
 }
@@ -526,7 +541,9 @@ impl From<HeapAddr> for Value {
 
 impl From<IndexErr<Label>> for RunErr {
     fn from(err: IndexErr<Label>) -> Self {
-        let _ = err; // FIXME
-        RunErr::Generic
+        match err {
+            IndexErr::OutOfBounds(k) => RunErr::NoSuchLabel(k),
+            IndexErr::ReprOverflow(u) => RunErr::Unrepresentable(u),
+        }
     }
 }
