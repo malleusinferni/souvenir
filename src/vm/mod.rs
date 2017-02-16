@@ -237,6 +237,13 @@ pub struct Process {
 }
 
 #[derive(Copy, Clone, Debug)]
+enum RunState {
+    Blocked(Io),
+    Running,
+    Exiting,
+}
+
+#[derive(Copy, Clone, Debug)]
 pub enum RunErr {
     StackOverflow,
     StackUnderflow,
@@ -674,16 +681,13 @@ impl Process {
         Ok(())
     }
 
-    fn is_blocked(&self) -> Ret<bool> {
-        match self.op {
-            Instr::Hcf => Err(RunErr::IllegalInstr(self.op)),
-
-            Instr::Bye | Instr::Blocking(_) => {
-                Ok(true)
-            },
-
-            _ => Ok(false),
-        }
+    fn run_state(&self) -> Ret<RunState> {
+        Ok(match self.op {
+            Instr::Bye => RunState::Exiting,
+            Instr::Blocking(io) => RunState::Blocked(io),
+            Instr::Hcf => return Err(RunErr::IllegalInstr(self.op)),
+            _ => RunState::Running,
+        })
     }
 
     fn start(&mut self, argv: LocalValue, env: LocalValue, label: Label, program: &Program) -> Ret<()> {
@@ -699,20 +703,21 @@ impl Process {
         Ok(())
     }
 
-    fn run(&mut self, program: &Program) -> Ret<bool> {
+    fn run(&mut self, program: &Program) -> Ret<RunState> {
         const SOME_SMALL_NUMBER: usize = 100;
 
         for _ in 0 .. SOME_SMALL_NUMBER {
-            self.exec(program)?;
+            match self.run_state()? {
+                RunState::Running => (),
+                other => return Ok(other),
+            };
 
-            if self.is_blocked()? {
-                return Ok(true);
-            }
+            self.exec(program)?;
 
             self.fetch(program)?;
         }
 
-        Ok(false)
+        self.run_state()
     }
 
     fn write_reg(&mut self, r: Reg, v: Value) -> Ret<()> {
@@ -782,10 +787,13 @@ impl Scheduler {
         let mut init = Box::new(Process::default());
 
         loop {
-            if init.run(&self.program)? { continue; }
-            if let Instr::Bye = init.op { break; }
+            let io = match init.run(&self.program)? {
+                RunState::Exiting => break,
+                RunState::Running => continue,
+                RunState::Blocked(io) => io,
+            };
 
-            match init.op.io()? {
+            match io {
                 Io::Export(reg, env_id) => {
                     let env = self.global_heap.localize({
                         init.stack.current().get(reg)?
@@ -811,11 +819,13 @@ impl Scheduler {
     fn run(&mut self, task: &mut Task) -> Ret<Option<Tag>> {
         let &mut Task { id, ref mut process } = task;
 
-        if process.run(&self.program)? {
-            return Ok(None);
-        }
+        let io = match process.run(&self.program)? {
+            RunState::Blocked(io) => io,
+            RunState::Running => return Ok(None),
+            _ => return Err(RunErr::IllegalInstr(process.op)),
+        };
 
-        match process.op.io()? {
+        match io {
             Io::Export(_, _) => {
                 return Err(RunErr::IllegalInstr(process.op))
             },
@@ -1160,4 +1170,20 @@ impl Default for Process {
             pc: InstrAddr(0),
         }
     }
+}
+
+#[test]
+fn simplest_init_possible() {
+    let mut code = VecMap::with_capacity(1);
+    code.push(Instr::Bye).unwrap();
+
+    let program = Program {
+        code: code,
+        jump_table: VecMap::with_capacity(0),
+        atom_table: StringInterner::new(),
+        str_table: StringInterner::new(),
+        env_table: VecMap::with_capacity(0),
+    };
+
+    program.init().unwrap();
 }
