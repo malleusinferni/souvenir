@@ -157,7 +157,6 @@ pub enum TypeTag {
     Actor,
     Str,
     List,
-    Undef,
 }
 
 #[derive(Copy, Clone, Debug)]
@@ -848,15 +847,15 @@ impl RunQueue {
 }
 
 impl Value {
-    pub fn tag(&self) -> TypeTag {
-        match self {
+    pub fn tag(&self) -> Ret<TypeTag> {
+        Ok(match self {
             &Value::Int(_) => TypeTag::Int,
             &Value::Atom(_) => TypeTag::Atom,
             &Value::ActorId(_) => TypeTag::Actor,
             &Value::StrConst(_) | &Value::StrAddr(_) => TypeTag::Str,
             &Value::ListAddr(_) | &Value::Capacity(_) => TypeTag::List,
-            &Value::Undefined => TypeTag::Undef,
-        }
+            &Value::Undefined => return Err(RunErr::Uninitialized),
+        })
     }
 
     pub fn as_int(self) -> Ret<i32> {
