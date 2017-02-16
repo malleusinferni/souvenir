@@ -6,11 +6,30 @@ use vecmap::*;
 
 /// Entry point to the interpreter API.
 pub struct Scheduler {
-    running: HashMap<ActorId, Box<Process>>,
-    sleeping: HashMap<ActorId, Box<Process>>,
-    dead: HashMap<ActorId, Box<Process>>,
     program: Program,
+
+    /// Processes which are alive and ready to run immediately.
+    queue: RunQueue,
+
+    /// Buffer of processes presently being executed.
     workspace: VecDeque<(ActorId, Box<Process>)>,
+
+    /// Buffer of input events presently being handled.
+    inbuf: VecDeque<InSignal>,
+
+    /// Buffered output from execution.
+    outbuf: VecDeque<OutSignal>,
+
+    next_pid: u32,
+
+    next_event: u32,
+}
+
+/// Organizes processes by current status.
+struct RunQueue {
+    running: HashMap<ActorId, Box<Process>>,
+    sleeping: HashMap<ActorId, (Tag, Box<Process>)>,
+    dead: VecDeque<Box<Process>>,
 }
 
 /// Program data marshalled for use by the host environment.
@@ -23,9 +42,33 @@ pub enum RawValue {
     List(Vec<RawValue>),
 }
 
+/// Signals sent into the interpreter by the host environment. Cannot be cloned.
+pub enum InSignal {
+    Kill(ActorId),
+    EndSay(SayReplyToken),
+    EndAsk(AskReplyToken),
+}
+
+/// Signals sent from the interpreter to the host environment. Cannot be cloned.
+pub enum OutSignal {
+    Exit(ActorId),
+    Hcf(ActorId, RunErr),
+    Say(SayToken),
+    Ask(AskToken),
+}
+
 /// Opaque key into the supervisor's list of processes.
 #[derive(Copy, Clone, Debug, Eq, Hash, PartialEq)]
 pub struct ActorId(u32);
+
+#[derive(Debug, Eq, Hash, PartialEq)]
+struct Tag(ActorId, u32);
+
+// NB. No Copy, no Clone!
+pub struct SayToken(Tag, RawValue);
+pub struct SayReplyToken(Tag);
+pub struct AskToken(Tag, Vec<(i32, RawValue)>);
+pub struct AskReplyToken(Tag, i32);
 
 /// Executable program
 #[derive(Clone, Debug)]
@@ -92,6 +135,7 @@ pub enum Io {
     Spawn(Reg, Label, Reg),
     Native(Reg, NativeFn, Reg),
     Say(Reg),
+    Ask(Reg, Reg),
 }
 
 #[derive(Copy, Clone, Debug, PartialEq)]
@@ -192,6 +236,9 @@ pub enum RunErr {
     TypeMismatch(Value, TypeTag),
     DividedByZero,
     Unrepresentable(usize),
+    Uninitialized,
+    NoSuchAtom(AtomId),
+    NoSuchValue(Value),
 }
 
 pub type Ret<T> = Result<T, RunErr>;
@@ -342,19 +389,23 @@ impl Heap {
         Ok(addr)
     }
 
-    fn check_bounds(&self, addr: HeapAddr, offset: u32) -> Ret<usize> {
+    fn size_of(&self, addr: HeapAddr) -> Ret<u32> {
         let addr: usize = addr.into();
         let header = *self.values.get(addr)
             .ok_or(RunErr::UnallocatedAccess(addr))?;
 
-        if let Value::Capacity(c) = header {
-            if c > offset {
-                Ok(addr + offset as usize)
-            } else {
-                Err(RunErr::HeapCorrupted(header))
-            }
+        if let Value::Capacity(size) = header {
+            Ok(size)
         } else {
-            Err(RunErr::ListOutOfBounds(addr, offset))
+            Err(RunErr::HeapCorrupted(header))
+        }
+    }
+
+    fn check_bounds(&self, addr: HeapAddr, offset: u32) -> Ret<usize> {
+        if self.size_of(addr)? > offset {
+            Ok(usize::from(addr) + 1 + offset as usize)
+        } else {
+            Err(RunErr::ListOutOfBounds(usize::from(addr), offset))
         }
     }
 
@@ -514,18 +565,12 @@ impl Process {
                 self.pc = cc.return_addr;
 
                 if !finished {
-                    self.run_handler(cc, program)?;
+                    self.call(cc, program)?;
                 }
             },
 
             Instr::Arm(env, label) => {
-                self.traps.retain(|trap| trap.label != label);
-
-                let addr = self.stack.current().get(env)?.as_addr()?;
-                self.traps.push(Trap {
-                    env: addr,
-                    label: label,
-                });
+                self.arm(env, label)?;
             },
 
             Instr::Disarm(label) => {
@@ -544,7 +589,17 @@ impl Process {
         Ok(())
     }
 
-    fn run_handler(&mut self, mut cc: Continuation, program: &Program) -> Ret<()> {
+    fn arm(&mut self, env: Reg, label: Label) -> Ret<()> {
+        self.traps.retain(|trap| trap.label != label);
+        let addr = self.stack.current().get(env)?.as_addr()?;
+        self.traps.push(Trap {
+            env: addr,
+            label: label,
+        });
+        Ok(())
+    }
+
+    fn call(&mut self, mut cc: Continuation, program: &Program) -> Ret<()> {
         let trap = match cc.queue.pop() {
             Some(trap) => trap,
             None => return Ok(()),
@@ -593,28 +648,201 @@ impl Process {
 
         Ok(false)
     }
+
+    fn write_reg(&mut self, r: Reg, v: Value) -> Ret<()> {
+        self.stack.current().set(r, v)
+    }
 }
 
 impl Scheduler {
+    pub fn send<I: IntoIterator<Item=InSignal>>(&mut self, inbuf: I) {
+        self.inbuf.extend(inbuf.into_iter());
+
+        for event in self.inbuf.drain(..) {
+            unimplemented!()
+        }
+    }
+
     pub fn dispatch(&mut self) {
         // FIXME: This isn't a very good scheduler.
 
-        self.workspace.extend(self.running.drain());
-        let num_running = self.workspace.len();
-        self.workspace.extend(self.sleeping.drain());
+        self.workspace.extend(self.queue.running.drain());
 
-        for (i, (id, mut process)) in self.workspace.drain(..).enumerate() {
-            match process.run(&self.program) {
-                Ok(false) => self.running.insert(id, process),
-                Ok(true) => self.sleeping.insert(id, process),
-                Err(_) => self.dead.insert(id, process),
-            };
+        while let Some((id, mut process)) = self.workspace.pop_front() {
+            match self.run(id, &mut process) {
+                Ok(Some(tag)) => {
+                    self.queue.sleeping.insert(id, (tag, process));
+                },
 
-            if i + 1 >= num_running { break; }
+                Ok(None) => {
+                    self.queue.running.insert(id, process);
+                },
+
+                Err(err) => {
+                    self.outbuf.push_back(OutSignal::Hcf(id, err));
+                    self.queue.dead.push_back(process);
+                },
+            }
+        }
+    }
+
+    fn run(&mut self, id: ActorId, process: &mut Process) -> Ret<Option<Tag>> {
+        if process.run(&self.program)? {
+            return Ok(None);
         }
 
-        for (id, mut process) in self.workspace.drain(..) {
-            unimplemented!()
+        match process.op.io()? {
+            Io::GetPid(dst) => {
+                let pid = Value::ActorId(id);
+                process.stack.current().set(dst, pid)?;
+                process.fetch(&self.program)?;
+                Ok(None)
+            },
+
+            Io::Say(msg) => {
+                let value = process.stack.current().get(msg)?;
+                let content = self.marshal(&process.heap, value)?;
+                let tag = self.tag(id);
+                let token = SayToken(tag.private_clone(), content);
+                self.outbuf.push_back(token.into());
+                Ok(Some(tag))
+            },
+
+            Io::Ask(src, dst) => {
+                let value = process.stack.current().get(src)?;
+                let choices = self.get_menu(&process.heap, value)?;
+                let tag = self.tag(id);
+                let token = AskToken(tag.private_clone(), choices);
+                self.outbuf.push_back(token.into());
+                Ok(Some(tag))
+            },
+
+            Io::ArmAtomic(env, label) => {
+                process.arm(env, label)?;
+                let tag = self.tag(id);
+                Ok(Some(tag))
+            },
+
+            Io::Native(_, _, _) => {
+                unimplemented!()
+            },
+
+            Io::Roll(_, _) => {
+                unimplemented!()
+            },
+
+            Io::SendMsg(_, _) => {
+                unimplemented!()
+            },
+
+            Io::Sleep(time) => {
+                unimplemented!()
+            },
+
+            Io::Spawn(argv, label, dst) => {
+                let argv = process.stack.current().get(argv)?;
+                let mut new = self.queue.fetch();
+                let new_id = ActorId(self.next_pid);
+                self.next_pid += 1;
+                process.stack.current().set(dst, Value::ActorId(new_id))?;
+                // FIXME: Copy arguments
+                // FIXME: Jump to entry point
+                process.fetch(&self.program)?;
+                Ok(None)
+            },
+        }
+    }
+
+    fn tag(&mut self, id: ActorId) -> Tag {
+        let tag = Tag(id, self.next_event);
+        self.next_event += 1;
+        tag
+    }
+
+    fn marshal(&self, heap: &Heap, value: Value) -> Ret<RawValue> {
+        match value {
+            Value::Int(i) => Ok(RawValue::Int(i)),
+            Value::ActorId(id) => Ok(RawValue::ActorId(id)),
+
+            Value::Atom(id) => {
+                match self.program.atom_table.resolve(id) {
+                    Some(s) => Ok(RawValue::Atom(s.to_owned())),
+                    None => Err(RunErr::NoSuchAtom(id)),
+                }
+            },
+
+            Value::StrAddr(addr) => {
+                match heap.strings.get(addr as usize) {
+                    Some(s) => Ok(RawValue::Str(s.clone())),
+                    None => Err(RunErr::UnallocatedAccess(addr as usize)),
+                }
+            },
+
+            Value::StrConst(id) => {
+                match self.program.str_table.resolve(id) {
+                    Some(s) => Ok(RawValue::Str(s.to_owned())),
+                    None => Err(RunErr::NoSuchValue(value)),
+                }
+            },
+
+            Value::ListAddr(addr) => {
+                let len = heap.size_of(addr)?;
+                let mut list = Vec::with_capacity(len as usize);
+                for i in 0 .. len {
+                    let value = heap.get(addr, i)?;
+                    list.push(self.marshal(heap, value)?);
+                }
+                Ok(RawValue::List(list))
+            },
+
+            Value::Capacity(_) => Err(RunErr::HeapCorrupted(value)),
+            Value::Undefined => Err(RunErr::Uninitialized),
+        }
+    }
+
+    fn get_menu(&self, heap: &Heap, value: Value) -> Ret<Vec<(i32, RawValue)>> {
+        let addr = value.as_addr()?;
+        let len = heap.size_of(addr)?;
+        let mut menu = Vec::with_capacity(len as usize);
+        for i in 0 .. len {
+            let choice_addr = heap.get(addr, i)?.as_addr()?;
+            let test = heap.get(choice_addr, 0)?.as_bool()?;
+            let tag = heap.get(choice_addr, 1)?.as_int()?;
+            let title = heap.get(choice_addr, 2)?;
+            let title = self.marshal(heap, title)?;
+            if test { menu.push((tag, title)); }
+        }
+        Ok(menu)
+    }
+}
+
+impl Instr {
+    fn io(self) -> Ret<Io> {
+        match self {
+            Instr::Blocking(io) => Ok(io),
+            _ => Err(RunErr::IllegalInstr(self)),
+        }
+    }
+}
+
+impl RunQueue {
+    fn find_mut(&mut self, id: ActorId) -> Option<&mut Process> {
+        if let Some(process) = self.running.get_mut(&id) {
+            return Some(process.as_mut());
+        }
+
+        if let Some(pair) = self.sleeping.get_mut(&id) {
+            return Some(pair.1.as_mut());
+        }
+
+        None
+    }
+
+    fn fetch(&mut self) -> Box<Process> {
+        if let Some(old) = self.dead.pop_front() {
+            old
+        } else {
+            Box::new(Process::default())
         }
     }
 }
@@ -650,6 +878,12 @@ impl Value {
     }
 }
 
+impl Tag {
+    fn private_clone(&self) -> Self {
+        Tag(self.0, self.1)
+    }
+}
+
 impl From<i32> for Value {
     fn from(i: i32) -> Self {
         Value::Int(i)
@@ -682,6 +916,39 @@ impl From<IndexErr<InstrAddr>> for RunErr {
         match err {
             IndexErr::OutOfBounds(k) => RunErr::FetchOutOfBounds(k),
             IndexErr::ReprOverflow(u) => RunErr::Unrepresentable(u),
+        }
+    }
+}
+
+impl From<SayToken> for OutSignal {
+    fn from(token: SayToken) -> Self {
+        OutSignal::Say(token)
+    }
+}
+
+impl From<AskToken> for OutSignal {
+    fn from(token: AskToken) -> Self {
+        OutSignal::Ask(token)
+    }
+}
+
+impl Default for Stack {
+    fn default() -> Self {
+        Stack {
+            lower: StackFrame::default(),
+            upper: None,
+        }
+    }
+}
+
+impl Default for Process {
+    fn default() -> Self {
+        Process {
+            stack: Stack::default(),
+            heap: Heap::default(),
+            traps: vec![],
+            op: Instr::Nop,
+            pc: InstrAddr(0),
         }
     }
 }
