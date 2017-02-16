@@ -12,7 +12,7 @@ pub struct Scheduler {
     queue: RunQueue,
 
     /// Buffer of processes presently being executed.
-    workspace: VecDeque<(ActorId, Box<Process>)>,
+    workspace: VecDeque<Task>,
 
     /// Buffer of input events presently being handled.
     inbuf: VecDeque<InSignal>,
@@ -430,7 +430,12 @@ impl Heap {
     fn localize(&mut self, heap: &Heap, value: Value) -> Ret<Value> {
         Ok(match value {
             Value::StrAddr(addr) => {
-                unimplemented!()
+                // FIXME: We should be using a StringInterner here
+                let len = self.strings.len();
+                let content = heap.strings.get(addr as usize)
+                    .ok_or(RunErr::UnallocatedAccess(addr as usize))?;
+                self.strings.push(content.to_owned());
+                Value::StrAddr(len as u32)
             },
 
             Value::ListAddr(addr) => {
@@ -445,6 +450,17 @@ impl Heap {
 
             other => other,
         })
+    }
+
+    fn smaller(&self) -> Self {
+        Heap {
+            values: Vec::with_capacity(self.values.len() / 4),
+            strings: Vec::with_capacity(self.strings.len() / 4),
+        }
+    }
+
+    fn get_env(&mut self, program: &Program, label: Label) -> Ret<Value> {
+        unimplemented!()
     }
 }
 
@@ -605,7 +621,22 @@ impl Process {
             },
 
             Instr::Recur(argv, label) => {
-                unimplemented!()
+                // FIXME: Consider changing this to a blocking operation
+                // so we can pool discarded Heaps in the scheduler
+
+                let mut heap = self.heap.smaller();
+                let env = heap.get_env(program, label)?;
+                let argv = self.stack.current().get(argv)?;
+                let argv = heap.localize(&self.heap, argv)?;
+
+                let mut stack = Stack::default();
+                stack.lower.set(Reg::env(), env)?;
+                stack.lower.set(Reg::arg(), argv)?;
+
+                self.traps.clear();
+                self.stack = stack;
+                self.heap = heap;
+                self.pc = *program.jump_table.get(label)?;
             },
 
             Instr::Blocking(_) | Instr::Bye | Instr::Hcf => {
@@ -692,27 +723,31 @@ impl Scheduler {
     pub fn dispatch(&mut self) {
         // FIXME: This isn't a very good scheduler.
 
-        self.workspace.extend(self.queue.running.drain());
+        self.workspace.extend(self.queue.running.drain().map(|(id, p)| {
+            Task { id: id, process: p, }
+        }));
 
-        while let Some((id, mut process)) = self.workspace.pop_front() {
-            match self.run(id, &mut process) {
+        while let Some(mut task) = self.workspace.pop_front() {
+            match self.run(&mut task) {
                 Ok(Some(tag)) => {
-                    self.queue.sleeping.insert(id, (tag, process));
+                    self.queue.sleeping.insert(task.id, (tag, task.process));
                 },
 
                 Ok(None) => {
-                    self.queue.running.insert(id, process);
+                    self.queue.running.insert(task.id, task.process);
                 },
 
                 Err(err) => {
-                    self.outbuf.push_back(OutSignal::Hcf(id, err));
-                    self.queue.dead.push_back(process);
+                    self.outbuf.push_back(OutSignal::Hcf(task.id, err));
+                    self.queue.dead.push_back(task.process);
                 },
             }
         }
     }
 
-    fn run(&mut self, id: ActorId, process: &mut Process) -> Ret<Option<Tag>> {
+    fn run(&mut self, task: &mut Task) -> Ret<Option<Tag>> {
+        let &mut Task { id, ref mut process } = task;
+
         if process.run(&self.program)? {
             return Ok(None);
         }
@@ -793,6 +828,7 @@ impl Scheduler {
         self.next_pid += 1;
         process.stack = Stack::default();
         process.heap.clear();
+        process.traps.clear();
 
         Task {
             id: new_id,
