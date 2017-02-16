@@ -20,6 +20,10 @@ pub struct Scheduler {
     /// Buffered output from execution.
     outbuf: VecDeque<OutSignal>,
 
+    env_table: VecMap<EnvId, Value>,
+
+    global_heap: Heap,
+
     next_pid: u32,
 
     next_event: u32,
@@ -89,6 +93,8 @@ pub struct Program {
 
     /// Interned (global) string constants.
     pub str_table: StringInterner<StrId>,
+
+    pub env_table: VecMap<Label, EnvId>,
 }
 
 /// Unencoded (immediately executable) VM instructions.
@@ -119,7 +125,6 @@ pub enum Instr {
     Write(Reg, Ptr),
     Jump(Label),
     JumpIf(Flag, Label),
-    Recur(Reg, Label),
     Arm(Reg, Label),
     Disarm(Label),
     Return(bool),
@@ -132,12 +137,15 @@ pub enum Instr {
 /// Instructions representing blocking IO operations.
 #[derive(Copy, Clone, Debug)]
 pub enum Io {
+    Export(Reg, EnvId),
+    Recur(Reg, EnvId, Label),
+    Spawn(Reg, EnvId, Label, Reg),
     GetPid(Reg),
     SendMsg(Reg, Reg),
     Roll(Reg, Reg),
     Sleep(f32),
     ArmAtomic(Reg, Label),
-    Spawn(Reg, Label, Reg),
+    Trace(Reg),
     Native(Reg, NativeFn, Reg),
     Say(Reg),
     Ask(Reg, Reg),
@@ -174,6 +182,11 @@ pub struct ListLen(pub u32);
 pub struct Ptr {
     addr: Reg,
     offset: u32,
+}
+
+pub struct LocalValue<'a> {
+    value: Value,
+    heap: &'a Heap,
 }
 
 pub type JumpTable = VecMap<Label, InstrAddr>;
@@ -241,6 +254,7 @@ pub enum RunErr {
     Uninitialized,
     NoSuchAtom(AtomId),
     NoSuchValue(Value),
+    EnvNotInitialized(EnvId),
 }
 
 pub type Ret<T> = Result<T, RunErr>;
@@ -285,10 +299,11 @@ macro_rules! index_via_u32 {
     };
 }
 
-index_via_u32!(Label, InstrAddr);
+index_via_u32!(Label, InstrAddr, EnvId);
 index_via_u32!(InstrAddr, Instr);
 index_via_u32!(Reg, Value);
 index_via_u32!(HeapAddr, Value);
+index_via_u32!(EnvId, Value);
 index_via_u32!(Flag, bool);
 
 macro_rules! symbol_via_u32 {
@@ -427,22 +442,25 @@ impl Heap {
         self.strings.clear();
     }
 
-    fn localize(&mut self, heap: &Heap, value: Value) -> Ret<Value> {
-        Ok(match value {
+    fn localize(&mut self, item: LocalValue) -> Ret<Value> {
+        Ok(match item.value {
             Value::StrAddr(addr) => {
                 // FIXME: We should be using a StringInterner here
                 let len = self.strings.len();
-                let content = heap.strings.get(addr as usize)
+                let content = item.heap.strings.get(addr as usize)
                     .ok_or(RunErr::UnallocatedAccess(addr as usize))?;
                 self.strings.push(content.to_owned());
                 Value::StrAddr(len as u32)
             },
 
             Value::ListAddr(addr) => {
-                let len = heap.size_of(addr)?;
+                let len = item.heap.size_of(addr)?;
                 let list = self.alloc(ListLen(len))?;
                 for i in 0 .. len {
-                    let value = self.localize(heap, heap.get(addr, i)?)?;
+                    let value = self.localize(LocalValue {
+                        value: item.heap.get(addr, i)?,
+                        heap: item.heap,
+                    })?;
                     self.set(list, i, value)?;
                 }
                 Value::ListAddr(list)
@@ -457,10 +475,6 @@ impl Heap {
             values: Vec::with_capacity(self.values.len() / 4),
             strings: Vec::with_capacity(self.strings.len() / 4),
         }
-    }
-
-    fn get_env(&mut self, program: &Program, label: Label) -> Ret<Value> {
-        unimplemented!()
     }
 }
 
@@ -620,25 +634,6 @@ impl Process {
                 self.traps.retain(|trap| trap.label != label);
             },
 
-            Instr::Recur(argv, label) => {
-                // FIXME: Consider changing this to a blocking operation
-                // so we can pool discarded Heaps in the scheduler
-
-                let mut heap = self.heap.smaller();
-                let env = heap.get_env(program, label)?;
-                let argv = self.stack.current().get(argv)?;
-                let argv = heap.localize(&self.heap, argv)?;
-
-                let mut stack = Stack::default();
-                stack.lower.set(Reg::env(), env)?;
-                stack.lower.set(Reg::arg(), argv)?;
-
-                self.traps.clear();
-                self.stack = stack;
-                self.heap = heap;
-                self.pc = *program.jump_table.get(label)?;
-            },
-
             Instr::Blocking(_) | Instr::Bye | Instr::Hcf => {
                 return Err(RunErr::IllegalInstr(self.op))
             },
@@ -688,6 +683,19 @@ impl Process {
 
             _ => Ok(false),
         }
+    }
+
+    fn start(&mut self, argv: LocalValue, env: LocalValue, label: Label, program: &Program) -> Ret<()> {
+        let argv = self.heap.localize(argv)?;
+        self.stack.lower.set(Reg::arg(), argv)?;
+
+        let env = self.heap.localize(env)?;
+        self.stack.lower.set(Reg::env(), env)?;
+
+        self.pc = *program.jump_table.get(label)?;
+        self.fetch(program)?;
+
+        Ok(())
     }
 
     fn run(&mut self, program: &Program) -> Ret<bool> {
@@ -753,6 +761,10 @@ impl Scheduler {
         }
 
         match process.op.io()? {
+            Io::Export(_, _) => {
+                return Err(RunErr::IllegalInstr(process.op))
+            },
+
             Io::GetPid(dst) => {
                 let pid = Value::ActorId(id);
                 process.stack.current().set(dst, pid)?;
@@ -762,7 +774,7 @@ impl Scheduler {
 
             Io::Say(msg) => {
                 let value = process.stack.current().get(msg)?;
-                let content = self.marshal(&process.heap, value)?;
+                let content = self.marshal(value.in_heap(&process.heap))?;
                 let tag = self.tag(id);
                 let token = SayToken(tag.private_clone(), content);
                 self.outbuf.push_back(token.into());
@@ -771,7 +783,7 @@ impl Scheduler {
 
             Io::Ask(src, dst) => {
                 let value = process.stack.current().get(src)?;
-                let choices = self.get_menu(&process.heap, value)?;
+                let choices = self.get_menu(value.in_heap(&process.heap))?;
                 let tag = self.tag(id);
                 let token = AskToken(tag.private_clone(), choices);
                 self.outbuf.push_back(token.into());
@@ -800,24 +812,48 @@ impl Scheduler {
                 unimplemented!()
             },
 
-            Io::Spawn(argv, label, dst) => {
-                let argv = process.stack.current().get(argv)?;
+            Io::Spawn(argv, env_id, label, dst) => {
                 let mut new = self.create();
+
+                {
+                    let argv = process.stack.current().get(argv)?
+                        .in_heap(&process.heap);
+                    let env = self.env_table.get(env_id)?
+                        .in_heap(&self.global_heap);
+
+                    new.process.start(argv, env, label, &self.program)?;
+                }
+
+                self.queue.running.insert(new.id, new.process);
+
                 process.stack.current().set(dst, new.id.into())?;
                 process.fetch(&self.program)?;
 
-                // FIXME: Copy environment
-                //new.heap.localize()
-                //new.stack.lower.set(Reg::env(), ...)?;
+                Ok(None)
+            },
 
-                let argv = new.process.heap.localize(&process.heap, argv)?;
-                new.process.stack.lower.set(Reg::arg(), argv)?;
+            Io::Recur(argv, env_id, label) => {
+                // Same as Spawn, but we replace the current process
+                let mut new = self.create();
 
-                new.process.pc = *self.program.jump_table.get(label)?;
-                new.process.fetch(&self.program)?;
-                self.queue.running.insert(new.id, new.process);
+                {
+                    let argv = process.stack.current().get(argv)?
+                        .in_heap(&process.heap);
+                    let env = self.env_table.get(env_id)?
+                        .in_heap(&self.global_heap);
+
+                    new.process.start(argv, env, label, &self.program)?;
+                }
+
+                ::std::mem::swap(process, &mut new.process);
+
+                self.queue.dead.push_back(new.process);
 
                 Ok(None)
+            },
+
+            Io::Trace(reg) => {
+                unimplemented!()
             },
         }
     }
@@ -842,8 +878,8 @@ impl Scheduler {
         tag
     }
 
-    fn marshal(&self, heap: &Heap, value: Value) -> Ret<RawValue> {
-        match value {
+    fn marshal(&self, item: LocalValue) -> Ret<RawValue> {
+        match item.value {
             Value::Int(i) => Ok(RawValue::Int(i)),
             Value::ActorId(id) => Ok(RawValue::ActorId(id)),
 
@@ -855,7 +891,7 @@ impl Scheduler {
             },
 
             Value::StrAddr(addr) => {
-                match heap.strings.get(addr as usize) {
+                match item.heap.strings.get(addr as usize) {
                     Some(s) => Ok(RawValue::Str(s.clone())),
                     None => Err(RunErr::UnallocatedAccess(addr as usize)),
                 }
@@ -864,36 +900,39 @@ impl Scheduler {
             Value::StrConst(id) => {
                 match self.program.str_table.resolve(id) {
                     Some(s) => Ok(RawValue::Str(s.to_owned())),
-                    None => Err(RunErr::NoSuchValue(value)),
+                    None => Err(RunErr::NoSuchValue(item.value)),
                 }
             },
 
             Value::ListAddr(addr) => {
-                let len = heap.size_of(addr)?;
+                let len = item.heap.size_of(addr)?;
                 let mut list = Vec::with_capacity(len as usize);
                 for i in 0 .. len {
-                    let value = heap.get(addr, i)?;
-                    list.push(self.marshal(heap, value)?);
+                    let value = item.heap.get(addr, i)?;
+                    list.push(self.marshal(value.in_heap(item.heap))?);
                 }
                 Ok(RawValue::List(list))
             },
 
-            Value::Capacity(_) => Err(RunErr::HeapCorrupted(value)),
+            Value::Capacity(_) => Err(RunErr::HeapCorrupted(item.value)),
             Value::Undefined => Err(RunErr::Uninitialized),
         }
     }
 
-    fn get_menu(&self, heap: &Heap, value: Value) -> Ret<Vec<(i32, RawValue)>> {
-        let addr = value.as_addr()?;
-        let len = heap.size_of(addr)?;
+    fn get_menu(&self, item: LocalValue) -> Ret<Vec<(i32, RawValue)>> {
+        let addr = item.value.as_addr()?;
+        let len = item.heap.size_of(addr)?;
         let mut menu = Vec::with_capacity(len as usize);
         for i in 0 .. len {
-            let choice_addr = heap.get(addr, i)?.as_addr()?;
-            let test = heap.get(choice_addr, 0)?.as_bool()?;
-            let tag = heap.get(choice_addr, 1)?.as_int()?;
-            let title = heap.get(choice_addr, 2)?;
-            let title = self.marshal(heap, title)?;
-            if test { menu.push((tag, title)); }
+            let choice_addr = item.heap.get(addr, i)?.as_addr()?;
+            let test = item.heap.get(choice_addr, 0)?.as_bool()?;
+            if test {
+                let tag = item.heap.get(choice_addr, 1)?.as_int()?;
+                let title = self.marshal({
+                    item.heap.get(choice_addr, 2)?.in_heap(item.heap)
+                })?;
+                menu.push((tag, title));
+            }
         }
         Ok(menu)
     }
@@ -969,6 +1008,13 @@ impl Value {
             _ => Err(RunErr::TypeMismatch(self, TypeTag::List)),
         }
     }
+
+    fn in_heap<'a>(self, heap: &'a Heap) -> LocalValue<'a> {
+        LocalValue {
+            value: self,
+            heap: heap,
+        }
+    }
 }
 
 impl Tag {
@@ -1014,6 +1060,15 @@ impl From<IndexErr<InstrAddr>> for RunErr {
     fn from(err: IndexErr<InstrAddr>) -> Self {
         match err {
             IndexErr::OutOfBounds(k) => RunErr::FetchOutOfBounds(k),
+            IndexErr::ReprOverflow(u) => RunErr::Unrepresentable(u),
+        }
+    }
+}
+
+impl From<IndexErr<EnvId>> for RunErr {
+    fn from(err: IndexErr<EnvId>) -> Self {
+        match err {
+            IndexErr::OutOfBounds(k) => RunErr::EnvNotInitialized(k),
             IndexErr::ReprOverflow(u) => RunErr::Unrepresentable(u),
         }
     }

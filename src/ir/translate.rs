@@ -11,6 +11,7 @@ impl ir::Program {
     pub fn translate(self) -> Try<vm::Program> {
         let mut translator = Translator {
             registers: self.alloc_registers()?,
+            env_table: self.build_env_table()?,
             code: Vec::new(),
             jump_table: vm::JumpTable::with_capacity(self.blocks.len()),
             current: vm::Label::checked_from(0).unwrap(),
@@ -26,10 +27,15 @@ impl ir::Program {
     pub fn alloc_registers(&self) -> Try<HashMap<ir::Var, vm::Reg>> {
         ice!("Unimplemented");
     }
+
+    pub fn build_env_table(&self) -> Try<HashMap<ir::Label, vm::EnvId>> {
+        ice!("Unimplemented");
+    }
 }
 
 struct Translator {
     registers: HashMap<ir::Var, vm::Reg>,
+    env_table: HashMap<ir::Label, vm::EnvId>,
     code: Vec<vm::Instr>,
     jump_table: vm::JumpTable,
     current: vm::Label,
@@ -131,9 +137,16 @@ impl Translator {
             },
 
             ir::Exit::Recur(ir::FnCall { argv, label }) => {
+                let env_id = match self.env_table.get(&label) {
+                    Some(&id) => id,
+                    None => ice!("Missing env ID for label"),
+                };
+
                 let label = self.tr_label(label)?;
                 let argv = self.tr_var(argv)?;
-                self.emit(vm::Instr::Recur(argv, label))
+                self.emit(vm::Instr::Blocking({
+                    vm::Io::Recur(argv, env_id, label)
+                }))
             },
 
             ir::Exit::Return(result) => {
