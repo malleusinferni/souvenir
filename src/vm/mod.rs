@@ -61,6 +61,11 @@ pub enum OutSignal {
 #[derive(Copy, Clone, Debug, Eq, Hash, PartialEq)]
 pub struct ActorId(u32);
 
+struct Task {
+    id: ActorId,
+    process: Box<Process>,
+}
+
 #[derive(Debug, Eq, Hash, PartialEq)]
 struct Tag(ActorId, u32);
 
@@ -191,9 +196,7 @@ pub struct Continuation {
     return_addr: InstrAddr,
 
     /// Input to running handlers.
-    message: Value,
-
-    sender: Value,
+    argv: HeapAddr,
 
     frame: StackFrame,
 
@@ -251,7 +254,7 @@ impl Default for Instr {
 impl Default for StackFrame {
     fn default() -> Self {
         StackFrame {
-            gpr: [Value::Int(-1); REG_COUNT],
+            gpr: [Value::Undefined; REG_COUNT],
             flag: [false; REG_COUNT],
         }
     }
@@ -417,6 +420,31 @@ impl Heap {
         let i = self.check_bounds(addr, offset)?;
         self.values[i] = value;
         Ok(())
+    }
+
+    fn clear(&mut self) {
+        self.values.clear();
+        self.strings.clear();
+    }
+
+    fn localize(&mut self, heap: &Heap, value: Value) -> Ret<Value> {
+        Ok(match value {
+            Value::StrAddr(addr) => {
+                unimplemented!()
+            },
+
+            Value::ListAddr(addr) => {
+                let len = heap.size_of(addr)?;
+                let list = self.alloc(ListLen(len))?;
+                for i in 0 .. len {
+                    let value = self.localize(heap, heap.get(addr, i)?)?;
+                    self.set(list, i, value)?;
+                }
+                Value::ListAddr(list)
+            },
+
+            other => other,
+        })
     }
 }
 
@@ -604,9 +632,8 @@ impl Process {
             None => return Ok(()),
         };
 
-        cc.frame.gpr[0] = trap.env.into();
-        cc.frame.gpr[1] = cc.message;
-        cc.frame.gpr[2] = cc.sender;
+        cc.frame.set(Reg::env(), trap.env.into())?;
+        cc.frame.set(Reg::arg(), cc.argv.into())?;
 
         self.stack.push(cc)?;
         self.pc = *program.jump_table.get(trap.label)?;
@@ -740,15 +767,36 @@ impl Scheduler {
 
             Io::Spawn(argv, label, dst) => {
                 let argv = process.stack.current().get(argv)?;
-                let mut new = self.queue.fetch();
-                let new_id = ActorId(self.next_pid);
-                self.next_pid += 1;
-                process.stack.current().set(dst, Value::ActorId(new_id))?;
-                // FIXME: Copy arguments
-                // FIXME: Jump to entry point
+                let mut new = self.create();
+                process.stack.current().set(dst, new.id.into())?;
                 process.fetch(&self.program)?;
+
+                // FIXME: Copy environment
+                //new.heap.localize()
+                //new.stack.lower.set(Reg::env(), ...)?;
+
+                let argv = new.process.heap.localize(&process.heap, argv)?;
+                new.process.stack.lower.set(Reg::arg(), argv)?;
+
+                new.process.pc = *self.program.jump_table.get(label)?;
+                new.process.fetch(&self.program)?;
+                self.queue.running.insert(new.id, new.process);
+
                 Ok(None)
             },
+        }
+    }
+
+    fn create(&mut self) -> Task {
+        let mut process = self.queue.fetch();
+        let new_id = ActorId(self.next_pid);
+        self.next_pid += 1;
+        process.stack = Stack::default();
+        process.heap.clear();
+
+        Task {
+            id: new_id,
+            process: process,
         }
     }
 
@@ -846,6 +894,16 @@ impl RunQueue {
     }
 }
 
+impl Reg {
+    pub fn env() -> Self {
+        Reg(0)
+    }
+
+    pub fn arg() -> Self {
+        Reg(1)
+    }
+}
+
 impl Value {
     pub fn tag(&self) -> Ret<TypeTag> {
         Ok(match self {
@@ -898,6 +956,12 @@ impl From<ListLen> for Value {
 impl From<HeapAddr> for Value {
     fn from(addr: HeapAddr) -> Self {
         Value::ListAddr(addr)
+    }
+}
+
+impl From<ActorId> for Value {
+    fn from(id: ActorId) -> Self {
+        Value::ActorId(id)
     }
 }
 
