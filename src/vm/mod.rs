@@ -255,6 +255,7 @@ pub enum RunErr {
     NoSuchAtom(AtomId),
     NoSuchValue(Value),
     EnvNotInitialized(EnvId),
+    InitFailure,
 }
 
 pub type Ret<T> = Result<T, RunErr>;
@@ -719,6 +720,30 @@ impl Process {
     }
 }
 
+impl Program {
+    pub fn init(self) -> Ret<Scheduler> {
+        let mut scheduler = Scheduler {
+            program: self,
+            workspace: VecDeque::with_capacity(32),
+            queue: RunQueue {
+                running: HashMap::new(),
+                sleeping: HashMap::new(),
+                dead: VecDeque::with_capacity(32),
+            },
+            global_heap: Heap::default(),
+            env_table: VecMap::with_capacity(32),
+            inbuf: VecDeque::with_capacity(32),
+            outbuf: VecDeque::with_capacity(32),
+            next_event: 0,
+            next_pid: 0,
+        };
+
+        scheduler.build_env()?;
+
+        Ok(scheduler)
+    }
+}
+
 impl Scheduler {
     pub fn send<I: IntoIterator<Item=InSignal>>(&mut self, inbuf: I) {
         self.inbuf.extend(inbuf.into_iter());
@@ -751,6 +776,36 @@ impl Scheduler {
                 },
             }
         }
+    }
+
+    fn build_env(&mut self) -> Ret<()> {
+        let mut init = Box::new(Process::default());
+
+        loop {
+            if init.run(&self.program)? { continue; }
+            if let Instr::Bye = init.op { break; }
+
+            match init.op.io()? {
+                Io::Export(reg, env_id) => {
+                    let env = self.global_heap.localize({
+                        init.stack.current().get(reg)?
+                            .in_heap(&init.heap)
+                    })?;
+
+                    let id = self.env_table.push(env)?;
+
+                    if id != env_id { return Err(RunErr::InitFailure); }
+                },
+
+                _ => {
+                    return Err(RunErr::IllegalInstr(init.op));
+                },
+            }
+        }
+
+        self.queue.dead.push_back(init);
+
+        Ok(())
     }
 
     fn run(&mut self, task: &mut Task) -> Ret<Option<Tag>> {
