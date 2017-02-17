@@ -123,6 +123,10 @@ pub trait Rewriter {
                 result: result,
             },
 
+            Stmt::Say { message } => Stmt::Say {
+                message: self.rw_expr(message)?,
+            },
+
             Stmt::SendMsg { target, message } => Stmt::SendMsg {
                 target: self.rw_expr(target)?,
                 message: self.rw_expr(message)?,

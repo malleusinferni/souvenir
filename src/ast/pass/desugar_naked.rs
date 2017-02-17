@@ -43,9 +43,13 @@ impl Rewriter for Pass {
                         }
                     }
 
-                    output.push(Stmt::Naked {
-                        target: target,
-                        message: Str::Plain(text),
+                    let () = match target {
+                        Expr::PidZero => (),
+                        _other => ice!("SayVia: Not yet supported"),
+                    };
+
+                    output.push(Stmt::Say {
+                        message: Expr::Str(Str::Plain(text)),
                     });
                 },
 

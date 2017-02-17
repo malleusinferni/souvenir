@@ -243,6 +243,11 @@ impl Builder {
                 self.current()?.exit(ir::Exit::Return(result))
             },
 
+            ast::Stmt::Say { message } => {
+                let message = self.tr_expr(message)?;
+                self.emit(ir::Op::Say(message))
+            },
+
             ast::Stmt::SendMsg { message, target } => {
                 let message = self.tr_expr(message)?;
                 let target = self.tr_expr(target)?;

@@ -62,7 +62,7 @@ pub enum Op {
     Discard(Rvalue),
     Let(Var, Rvalue),
     Listen(TrapRef),
-    Print(Var),
+    Say(Var),
     Store(Var, Ptr),
     SendMsg(Var, Var),
     Set(Flag, Tvalue),

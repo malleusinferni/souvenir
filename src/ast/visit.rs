@@ -124,6 +124,10 @@ pub trait Visitor {
 
             &Stmt::Return { ref result } => { let _ = result; () },
 
+            &Stmt::Say { ref message } => {
+                self.visit_expr(message)?;
+            },
+
             &Stmt::SendMsg { ref target, ref message } => {
                 self.visit_expr(message)?;
                 self.visit_expr(target)?;

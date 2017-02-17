@@ -2,6 +2,8 @@ pub mod argument_count;
 pub mod prelude_restrictions;
 pub mod variable_definitions;
 
+pub mod qualify_modpaths;
+
 pub mod desugar_listen;
 pub mod desugar_match;
 pub mod desugar_weave;
@@ -21,11 +23,28 @@ pub struct DesugaredProgram {
 
 impl Program {
     pub fn desugar(self) -> Try<DesugaredProgram> {
-        let dst: DesugaredProgram = ice!("Unimplemented");
+        let mut preludes = vec![];
+        let mut scenes = vec![];
 
-        dst.desugar_listen()?
+        for (modpath, module) in self.modules {
+            let prelude_body = module.globals.qualify(&modpath)?;
+
+            for scene in module.scenes {
+                scenes.push(scene.qualify(&modpath)?);
+            }
+
+            preludes.push((modpath, prelude_body));
+        }
+
+        let dst = DesugaredProgram {
+            preludes: preludes,
+            scenes: scenes,
+            lambdas: vec![],
+        };
+
+        dst.desugar_naked()?
+            .desugar_listen()?
             .desugar_trap()?
-            .desugar_naked()?
             .desugar_weave()?
             .desugar_match()
     }

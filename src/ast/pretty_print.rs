@@ -46,6 +46,10 @@ impl Display for ast::Stmt {
                 writeln!(f, ";;")
             },
 
+            &ast::Stmt::Say { ref message } => {
+                writeln!(f, "say {}", message)
+            },
+
             _ => write!(f, "STATEMENT"),
         }
     }

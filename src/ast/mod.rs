@@ -111,6 +111,10 @@ pub enum Stmt {
         result: bool,
     },
 
+    Say {
+        message: Expr,
+    },
+
     SendMsg {
         message: Expr,
         target: Expr,
