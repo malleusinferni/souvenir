@@ -445,7 +445,10 @@ impl Builder {
             },
 
             ast::Expr::Spawn(call) => {
-                ice!("Unimplemented: Spawn expressions")
+                let ast::Call(scene, args) = call;
+                let scene = self.tr_scene_name(scene)?;
+                let argv = self.tr_expr(ast::Expr::List(args))?;
+                self.assign_temp(ir::Rvalue::Spawn(scene.with_argv(argv)))
             },
 
             ast::Expr::PidOfSelf => {

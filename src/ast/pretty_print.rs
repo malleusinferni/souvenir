@@ -304,7 +304,9 @@ impl Display for LoadErr {
 impl Display for CompileErr {
     fn fmt(&self, f: &mut Formatter) -> Result {
         match self {
-            &CompileErr::Internal(ICE(ref ice)) => write!(f, "{}", ice),
+            &CompileErr::Internal(ICE(ref ice)) => {
+                write!(f, "INTERNAL ERROR!!! {}", ice)
+            },
 
             &CompileErr::Load(ref err) => write!(f, "{}", err),
 

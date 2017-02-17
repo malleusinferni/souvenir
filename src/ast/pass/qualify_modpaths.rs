@@ -58,6 +58,13 @@ impl Pass {
             &Ctx::Scene(ref scene_name) => Ok(scene_name.clone()),
         }
     }
+
+    fn module_name(&self) -> Try<Modpath> {
+        match &self.context {
+            &Ctx::Prelude(ref path) => Ok(path.clone()),
+            &Ctx::Scene(ref scene_name) => Ok(scene_name.in_module.clone()),
+        }
+    }
 }
 
 impl Rewriter for Pass {
@@ -75,5 +82,13 @@ impl Rewriter for Pass {
 
             Label::Qualified(q) => Label::Qualified(q),
         })
+    }
+
+    fn rw_scene_name(&mut self, mut t: SceneName) -> Try<SceneName> {
+        if t.in_module.is_none() {
+            t.in_module = Some(self.module_name()?);
+        }
+
+        Ok(t)
     }
 }
