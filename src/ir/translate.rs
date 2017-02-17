@@ -1,5 +1,7 @@
 use std::collections::HashMap;
 
+use string_interner::StringInterner;
+
 use vecmap::CheckedFrom;
 
 use ir;
@@ -14,6 +16,8 @@ impl ir::Program {
             env_table: self.build_env_table()?,
             code: Vec::new(),
             jump_table: vm::JumpTable::with_capacity(self.blocks.len()),
+            str_table: self.str_table,
+            atom_table: self.atom_table,
             current: vm::Label::checked_from(0).unwrap(),
         };
 
@@ -21,15 +25,17 @@ impl ir::Program {
             translator.tr_block(block)?;
         }
 
-        ice!("Unimplemented");
-    }
-
-    pub fn alloc_registers(&self) -> Try<HashMap<ir::Var, vm::Reg>> {
-        ice!("Unimplemented");
+        Ok(vm::Program {
+            code: translator.code.into(),
+            jump_table: translator.jump_table,
+            str_table: translator.str_table,
+            atom_table: translator.atom_table,
+            //env_table: translator.env_table,
+        })
     }
 
     pub fn build_env_table(&self) -> Try<HashMap<ir::Label, vm::EnvId>> {
-        ice!("Unimplemented");
+        ice!("Unimplemented: Env table construction");
     }
 }
 
@@ -38,6 +44,8 @@ struct Translator {
     env_table: HashMap<ir::Label, vm::EnvId>,
     code: Vec<vm::Instr>,
     jump_table: vm::JumpTable,
+    str_table: StringInterner<vm::StrId>,
+    atom_table: StringInterner<vm::AtomId>,
     current: vm::Label,
 }
 
@@ -94,6 +102,21 @@ impl Translator {
                     self.emit(vm::Instr::LoadLit(vm::Value::Int(i), dst))
                 },
 
+                ir::Rvalue::Const(cr) => {
+                    let dst = self.tr_var(dst)?;
+                    match cr {
+                        ir::ConstRef::Atom(a) => {
+                            let lit = self.tr_atom(a)?;
+                            self.emit(vm::Instr::LoadLit(lit, dst))
+                        },
+
+                        ir::ConstRef::Str(s) => {
+                            let lit = self.tr_str(s)?;
+                            self.emit(vm::Instr::LoadLit(lit, dst))
+                        },
+                    }
+                },
+
                 ir::Rvalue::Add(lhs, rhs) => {
                     tr_binop(self, vm::Instr::Add, lhs, rhs, dst)
                 },
@@ -110,10 +133,10 @@ impl Translator {
                     tr_binop(self, vm::Instr::Mul, lhs, rhs, dst)
                 },
 
-                _ => ice!("Unimplemented"),
+                _ => ice!("Unimplemented: Rvalue {:?}", value),
             },
 
-            _ => ice!("Unimplemented"),
+            _ => ice!("Unimplemented: IR op {:?}", t),
         }
     }
 
@@ -160,6 +183,14 @@ impl Translator {
             Some(&reg) => Ok(reg),
             None => ice!("Unallocated IR var: {:?}", t),
         }
+    }
+
+    fn tr_atom(&mut self, t: ir::AtomId) -> Try<vm::Value> {
+        Ok(vm::Value::Atom(t))
+    }
+
+    fn tr_str(&mut self, t: ir::StrId) -> Try<vm::Value> {
+        Ok(vm::Value::StrConst(t))
     }
 
     fn tr_flag(&mut self, t: ir::Flag) -> Try<vm::Flag> {

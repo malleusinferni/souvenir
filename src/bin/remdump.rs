@@ -19,7 +19,7 @@ fn main() {
         jump_table: jump_table.into(),
         atom_table: string_interner::StringInterner::new(),
         str_table: string_interner::StringInterner::new(),
-        env_table: vec![].into(),
+        //env_table: vec![].into(),
     };
 
     println!("{}", program);

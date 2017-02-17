@@ -1,4 +1,5 @@
 pub mod pass;
+pub mod allocate;
 pub mod translate;
 
 use string_interner::{StringInterner, NonNegative};
@@ -22,11 +23,11 @@ pub struct Flag(pub u32);
 #[derive(Copy, Clone, Debug, Eq, Hash, PartialEq)]
 pub struct Label(pub u32);
 
-#[derive(Copy, Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
-pub struct StrId(pub u32);
+//#[derive(Copy, Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub type StrId = ::vm::StrId;
 
-#[derive(Copy, Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
-pub struct AtomId(pub u32);
+//#[derive(Copy, Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub type AtomId = ::vm::AtomId;
 
 #[derive(Copy, Clone, Debug, Eq, Hash, PartialEq)]
 pub enum ConstRef {
@@ -147,6 +148,7 @@ impl Label {
     }
 }
 
+/*
 impl From<usize> for StrId {
     fn from(u: usize) -> Self { StrId(u as u32) }
 }
@@ -165,3 +167,4 @@ impl From<AtomId> for usize {
 
 impl NonNegative for StrId {}
 impl NonNegative for AtomId {}
+*/

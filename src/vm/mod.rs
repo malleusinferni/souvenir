@@ -96,7 +96,7 @@ pub struct Program {
     /// Interned (global) string constants.
     pub str_table: StringInterner<StrId>,
 
-    pub env_table: VecMap<Label, EnvId>,
+    //pub env_table: HashMap<Label, EnvId>,
 }
 
 /// Unencoded (immediately executable) VM instructions.
@@ -318,7 +318,7 @@ index_via_u32!(Flag, bool);
 
 macro_rules! symbol_via_u32 {
     ( $name:ident ) => {
-        #[derive(Copy, Clone, Debug, Eq, Ord, PartialEq, PartialOrd)]
+        #[derive(Copy, Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
         pub struct $name(pub u32);
 
         impl From<$name> for usize {
