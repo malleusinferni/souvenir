@@ -199,11 +199,11 @@ impl Builder {
     }
 
     fn intern_str(&mut self, t: ast::Str) -> Try<ir::Var> {
-        ice!("Unimplemented")
+        ice!("Unimplemented: String constants")
     }
 
     fn intern_atom(&mut self, t: ast::Atom) -> Try<ir::Var> {
-        ice!("Unimplemented")
+        ice!("Unimplemented: Atom constants")
     }
 
     fn tr_program(mut self, t: DesugaredProgram) -> Try<ir::Program> {
@@ -445,7 +445,7 @@ impl Builder {
             },
 
             ast::Expr::Spawn(call) => {
-                ice!("Unimplemented")
+                ice!("Unimplemented: Spawn expressions")
             },
 
             ast::Expr::PidOfSelf => {
@@ -460,11 +460,13 @@ impl Builder {
                 self.assign_temp(ir::Rvalue::Splice(items))
             },
 
-            ast::Expr::PidZero => ice!("Unimplemented"),
+            ast::Expr::Arg(n) => {
+                self.assign_temp(ir::Rvalue::Arg(n))
+            },
 
-            ast::Expr::Infinity => ice!("Unimplemented"),
+            ast::Expr::PidZero => ice!("Unimplemented: PID zero"),
 
-            ast::Expr::Arg(_) => ice!("Unimplemented"),
+            ast::Expr::Infinity => ice!("Unimplemented: Infinity"),
         }
     }
 
