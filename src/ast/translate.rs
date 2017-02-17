@@ -19,6 +19,7 @@ impl DesugaredProgram {
 
             pc: 0,
             bindings: Vec::new(),
+            envs: HashMap::new(),
             const_str: HashMap::new(),
             const_atom: HashMap::new(),
             next_var: Counter(0, ir::Var),
@@ -69,6 +70,7 @@ struct Builder {
 
     pc: usize,
     bindings: Vec<(String, ir::Var)>,
+    envs: HashMap<ast::Modpath, Vec<(String, ir::Rvalue)>>,
     const_str: HashMap<String, ir::Var>,
     const_atom: HashMap<String, ir::Var>,
     next_var: Counter<ir::Var>,
@@ -137,7 +139,7 @@ impl Builder {
     fn assign(&mut self, name: &str, value: ir::Rvalue) -> Try<ir::Var> {
         let var = self.next_var.next();
         self.bindings.push((name.to_owned(), var));
-        self.emit(ir::Op::Let(var, value));
+        self.emit(ir::Op::Let(var, value))?;
         Ok(var)
     }
 
@@ -179,7 +181,21 @@ impl Builder {
     }
 
     fn capture_env(&mut self, modpath: ast::Modpath) -> Try<()> {
-        ice!("Unimplemented")
+        let contents = ast::Expr::List(self.bindings.iter().map(|&(ref n, v)| {
+            ast::Expr::Id(ast::Ident { name: n.clone() })
+        }).collect::<Vec<ast::Expr>>());
+
+        let list = self.tr_expr(contents)?;
+        let env = ir::Env(self.envs.len() as u32);
+        self.emit(ir::Op::Export(env, list))?;
+
+        let mut mappings = Vec::with_capacity(self.bindings.len());
+        for (i, (name, _)) in self.bindings.drain(..).enumerate() {
+            mappings.push((name, ir::Rvalue::LoadEnv(i as u32)));
+        }
+        self.envs.insert(modpath, mappings);
+
+        Ok(())
     }
 
     fn intern_str(&mut self, t: ast::Str) -> Try<ir::Var> {
@@ -215,11 +231,45 @@ impl Builder {
     }
 
     fn tr_scene(&mut self, t: ast::Scene) -> Try<()> {
-        ice!("Unimplemented")
+        let env = {
+            let qfd = t.name.qualified()?;
+            match self.envs.get(&qfd.in_module) {
+                Some(env) => env.clone(),
+                None => ice!("Missing env for {}", qfd),
+            }
+        };
+
+        let label = self.tr_scene_name(t.name)?;
+        self.jump(label)?;
+
+        for (name, value) in env.into_iter() {
+            self.assign(&name, value)?;
+        }
+
+        for (i, arg) in t.args.into_iter().enumerate() {
+            if let Some(ast::Ident { name }) = arg {
+                self.assign(&name, ir::Rvalue::Arg(i as u32))?;
+            }
+        }
+
+        self.tr_block(t.body)?;
+
+        self.current()?.exit(ir::Exit::EndProcess)?;
+        self.bindings.clear();
+
+        Ok(())
     }
 
     fn tr_lambda(&mut self, t: ast::TrapLambda) -> Try<()> {
-        ice!("Unimplemented")
+        // NOTE: Environment is built dynamically by Stmt::Arm
+        for (i, ast::Ident { name }) in t.captures.into_iter().enumerate() {
+            self.assign(&name, ir::Rvalue::LoadEnv(i as u32))?;
+        }
+
+        self.tr_block(t.body)?;
+        self.current()?.exit(ir::Exit::Return(false))?;
+
+        Ok(())
     }
 
     fn tr_block(&mut self, t: ast::Block) -> Try<()> {

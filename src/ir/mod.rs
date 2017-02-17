@@ -7,6 +7,9 @@ pub struct Program {
 }
 
 #[derive(Copy, Clone, Debug, Eq, Hash, PartialEq)]
+pub struct Env(pub u32);
+
+#[derive(Copy, Clone, Debug, Eq, Hash, PartialEq)]
 pub struct Var(pub u32);
 
 #[derive(Copy, Clone, Debug, PartialEq)]
@@ -60,6 +63,7 @@ pub enum Op {
     Arm(TrapRef),
     Disarm(Label),
     Discard(Rvalue),
+    Export(Env, Var),
     Let(Var, Rvalue),
     Listen(TrapRef),
     Say(Var),
@@ -83,6 +87,7 @@ pub enum Exit {
 #[derive(Clone, Debug)]
 pub enum Rvalue {
     Var(Var),
+    Arg(u32),
     Int(i32),
     Add(Var, Var),
     Sub(Var, Var),
@@ -90,6 +95,7 @@ pub enum Rvalue {
     Mul(Var, Var),
     Roll(Var, Var),
     Load(Ptr),
+    LoadEnv(u32),
     FromBool(Flag),
     Spawn(FnCall),
     Splice(Vec<Var>),
