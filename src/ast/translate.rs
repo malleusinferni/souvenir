@@ -1,5 +1,7 @@
 use std::collections::HashMap;
 
+use string_interner::StringInterner;
+
 use ast;
 use ir;
 
@@ -16,12 +18,12 @@ impl DesugaredProgram {
 
         let mut builder = Builder {
             blocks: Vec::with_capacity(self.count_blocks()),
+            str_table: StringInterner::new(),
+            atom_table: StringInterner::new(),
 
             pc: 0,
             bindings: Vec::new(),
             envs: HashMap::new(),
-            const_str: HashMap::new(),
-            const_atom: HashMap::new(),
             next_var: Counter(0, ir::Var),
             next_tmp: Counter(0, maketemp),
 
@@ -67,12 +69,13 @@ enum Func {
 
 struct Builder {
     blocks: Vec<Block>,
+    str_table: StringInterner<ir::StrId>,
+    atom_table: StringInterner<ir::AtomId>,
 
     pc: usize,
     bindings: Vec<(String, ir::Var)>,
     envs: HashMap<ast::Modpath, Vec<(String, ir::Rvalue)>>,
-    const_str: HashMap<String, ir::Var>,
-    const_atom: HashMap<String, ir::Var>,
+
     next_var: Counter<ir::Var>,
     next_tmp: Counter<String>,
 
@@ -107,7 +110,9 @@ impl Block {
                 Ok(())
             },
 
-            _ => ice!("Tried to modify a completed block"),
+            &mut Block::Complete(ref mut block) => {
+                ice!("Tried to modify a completed block\n{:?}\n{:?}", block, op)
+            },
         }
     }
 
@@ -198,12 +203,15 @@ impl Builder {
         Ok(())
     }
 
-    fn intern_str(&mut self, t: ast::Str) -> Try<ir::Var> {
-        ice!("Unimplemented: String constants")
+    fn intern_str(&mut self, t: &str) -> Try<ir::Var> {
+        let s = ir::ConstRef::Str(self.str_table.get_or_intern(t));
+        self.assign_temp(ir::Rvalue::Const(s))
     }
 
     fn intern_atom(&mut self, t: ast::Atom) -> Try<ir::Var> {
-        ice!("Unimplemented: Atom constants")
+        let ast::Atom::User(a) = t;
+        let a = ir::ConstRef::Atom(self.atom_table.get_or_intern(a));
+        self.assign_temp(ir::Rvalue::Const(a))
     }
 
     fn tr_program(mut self, t: DesugaredProgram) -> Try<ir::Program> {
@@ -225,8 +233,12 @@ impl Builder {
         Ok(ir::Program {
             blocks: self.blocks.into_iter().map(|block| match block {
                 Block::Complete(block) => Ok(block),
-                _ => ice!("Incomplete block"),
+                Block::Partial(info, block) => {
+                    ice!("Incomplete block: {:?}", block)
+                },
             }).collect::<Try<_>>()?,
+            str_table: self.str_table,
+            atom_table: self.atom_table,
         })
     }
 
@@ -261,6 +273,9 @@ impl Builder {
     }
 
     fn tr_lambda(&mut self, t: ast::TrapLambda) -> Try<()> {
+        let label = self.tr_label(t.label)?;
+        self.jump(label)?;
+
         // NOTE: Environment is built dynamically by Stmt::Arm
         for (i, ast::Ident { name }) in t.captures.into_iter().enumerate() {
             self.assign(&name, ir::Rvalue::LoadEnv(i as u32))?;
@@ -388,7 +403,10 @@ impl Builder {
     fn tr_expr(&mut self, t: ast::Expr) -> Try<ir::Var> {
         match t {
             ast::Expr::Atom(a) => self.intern_atom(a),
-            ast::Expr::Str(s) => self.intern_str(s),
+
+            ast::Expr::Str(s) => match s {
+                ast::Str::Plain(s) => self.intern_str(&s),
+            },
 
             ast::Expr::Int(i) => {
                 self.assign_temp(ir::Rvalue::Int(i))

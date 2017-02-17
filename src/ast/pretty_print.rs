@@ -99,8 +99,6 @@ impl Display for ast::Atom {
     fn fmt(&self, f: &mut Formatter) -> Result {
         match self {
             &ast::Atom::User(ref name) => write!(f, "#{}", name),
-
-            _ => write!(f, "#[internal]"),
         }
     }
 }

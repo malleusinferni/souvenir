@@ -221,7 +221,6 @@ pub enum Pat {
 
 #[derive(Clone, Debug, PartialEq)]
 pub enum Atom {
-    PrintLine,
     User(String),
 }
 

@@ -1,9 +1,13 @@
 pub mod pass;
 pub mod translate;
 
+use string_interner::{StringInterner, NonNegative};
+
 #[derive(Clone, Debug)]
 pub struct Program {
     pub blocks: Vec<Block>,
+    pub str_table: StringInterner<StrId>,
+    pub atom_table: StringInterner<AtomId>,
 }
 
 #[derive(Copy, Clone, Debug, Eq, Hash, PartialEq)]
@@ -18,13 +22,16 @@ pub struct Flag(pub u32);
 #[derive(Copy, Clone, Debug, Eq, Hash, PartialEq)]
 pub struct Label(pub u32);
 
-#[derive(Copy, Clone, Debug, PartialEq)]
-pub struct ConstRef(pub u32);
+#[derive(Copy, Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub struct StrId(pub u32);
 
-#[derive(Clone, Debug)]
-pub enum ConstValue {
-    Atom(String),
-    Str(String),
+#[derive(Copy, Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub struct AtomId(pub u32);
+
+#[derive(Copy, Clone, Debug, Eq, Hash, PartialEq)]
+pub enum ConstRef {
+    Atom(AtomId),
+    Str(StrId),
 }
 
 #[derive(Clone, Debug)]
@@ -139,3 +146,22 @@ impl Label {
         }
     }
 }
+
+impl From<usize> for StrId {
+    fn from(u: usize) -> Self { StrId(u as u32) }
+}
+
+impl From<StrId> for usize {
+    fn from(StrId(u): StrId) -> Self { u as usize }
+}
+
+impl From<usize> for AtomId {
+    fn from(u: usize) -> Self { AtomId(u as u32) }
+}
+
+impl From<AtomId> for usize {
+    fn from(AtomId(u): AtomId) -> Self { u as usize }
+}
+
+impl NonNegative for StrId {}
+impl NonNegative for AtomId {}
