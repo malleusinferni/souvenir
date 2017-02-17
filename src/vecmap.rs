@@ -47,6 +47,22 @@ impl<K, V> VecMap<K, V> where K: IndexFor<V> {
     pub fn len(&self) -> usize {
         self.contents.len()
     }
+
+    pub fn iter(&self) -> IterPairs<K, V> {
+        IterPairs(self, 0)
+    }
+}
+
+pub struct IterPairs<'a, K: 'a, V: 'a>(&'a VecMap<K, V>, usize)
+where K: IndexFor<V>;
+
+impl<K, V> From<Vec<V>> for VecMap<K, V> where K: IndexFor<V> {
+    fn from(vec: Vec<V>) -> Self {
+        VecMap {
+            contents: vec,
+            _key_type: PhantomData,
+        }
+    }
 }
 
 /*
@@ -75,6 +91,16 @@ impl<K, V> Clone for VecMap<K, V> where K: IndexFor<V>, V: Clone {
             contents: self.contents.clone(),
             _key_type: PhantomData,
         }
+    }
+}
+
+impl<'a, K, V> Iterator for IterPairs<'a, K, V> where K: IndexFor<V> {
+    type Item = (K, &'a V);
+
+    fn next(&mut self) -> Option<Self::Item> {
+        let key = K::checked_from(self.1).unwrap();
+        self.1 += 1;
+        self.0.get(key).ok().map(|v| (key, v))
     }
 }
 

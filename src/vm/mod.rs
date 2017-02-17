@@ -1,3 +1,5 @@
+mod pretty_print;
+
 use std::collections::{HashMap, VecDeque};
 
 use string_interner::{StringInterner, NonNegative};
