@@ -341,11 +341,17 @@ impl Builder {
                 let ast::Call(scene, args) = target;
                 let scene = self.tr_scene_name(scene)?;
                 let argv = self.tr_expr(ast::Expr::List(args))?;
-                self.current()?.exit(ir::Exit::Recur(scene.with_argv(argv)))
+                self.current()?.exit(ir::Exit::Recur(scene.with_argv(argv)))?;
+
+                let unreachable = self.create_block()?;
+                self.jump(unreachable)
             },
 
             ast::Stmt::Return { result } => {
-                self.current()?.exit(ir::Exit::Return(result))
+                self.current()?.exit(ir::Exit::Return(result))?;
+
+                let unreachable = self.create_block()?;
+                self.jump(unreachable)
             },
 
             ast::Stmt::Say { message } => {
