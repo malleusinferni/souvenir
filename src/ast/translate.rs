@@ -3,11 +3,12 @@ use std::collections::HashMap;
 use ast;
 use ir;
 
+use ast::pass::DesugaredProgram;
 use ast::rewrite::Counter;
 
 use driver::Try;
 
-impl ast::pass::DesugaredProgram {
+impl DesugaredProgram {
     pub fn translate(self) -> Try<ir::Program> {
         fn maketemp(id: u32) -> String {
             format!("TEMP%{:X}", id)
@@ -28,13 +29,24 @@ impl ast::pass::DesugaredProgram {
             labels: HashMap::new(),
         };
 
-        for scene in self.scenes {
+        // Prelude entry point must be block 0
+        let _ = builder.create_block()?;
+
+        for scene in self.scenes.iter() {
             let label = builder.create_block()?;
             let name = scene.name.qualified()?;
             builder.scenes.insert(name, label);
         }
 
-        ice!("TODO: Finish implementing")
+        for lambda in self.lambdas.iter() {
+            let label = builder.create_block()?;
+            let name = lambda.label.qualified()?;
+            builder.labels.insert(name, label);
+        }
+
+        // Setup done
+
+        builder.tr_program(self)
     }
 
     fn count_blocks(&self) -> usize {
@@ -166,12 +178,55 @@ impl Builder {
         }
     }
 
+    fn capture_env(&mut self, modpath: ast::Modpath) -> Try<()> {
+        ice!("Unimplemented")
+    }
+
     fn intern_str(&mut self, t: ast::Str) -> Try<ir::Var> {
         ice!("Unimplemented")
     }
 
     fn intern_atom(&mut self, t: ast::Atom) -> Try<ir::Var> {
         ice!("Unimplemented")
+    }
+
+    fn tr_program(mut self, t: DesugaredProgram) -> Try<ir::Program> {
+        self.jump(ir::Label(0))?;
+        for (modpath, body) in t.preludes {
+            self.tr_block(body)?;
+            self.capture_env(modpath)?;
+        }
+        self.current()?.exit(ir::Exit::EndProcess)?;
+
+        for scene in t.scenes {
+            self.tr_scene(scene)?;
+        }
+
+        for lambda in t.lambdas {
+            self.tr_lambda(lambda)?;
+        }
+
+        Ok(ir::Program {
+            blocks: self.blocks.into_iter().map(|block| match block {
+                Block::Complete(block) => Ok(block),
+                _ => ice!("Incomplete block"),
+            }).collect::<Try<_>>()?,
+        })
+    }
+
+    fn tr_scene(&mut self, t: ast::Scene) -> Try<()> {
+        ice!("Unimplemented")
+    }
+
+    fn tr_lambda(&mut self, t: ast::TrapLambda) -> Try<()> {
+        ice!("Unimplemented")
+    }
+
+    fn tr_block(&mut self, t: ast::Block) -> Try<()> {
+        for stmt in t.0 {
+            self.tr_stmt(stmt)?;
+        }
+        Ok(())
     }
 
     fn tr_stmt(&mut self, t: ast::Stmt) -> Try<()> {
@@ -416,23 +471,6 @@ impl Builder {
                 self.set(ir::Tvalue::Not(flag))
             },
         }
-    }
-
-    fn tr_lambda(&mut self, t: ast::TrapLambda) -> Try<ir::TrapRef> {
-        let env = {
-            let vars = t.captures.iter().cloned().map(|id| {
-                ast::Expr::Id(id)
-            }).collect::<Vec<_>>();
-
-            self.tr_expr(ast::Expr::List(vars))?
-        };
-
-        let label = self.tr_label(t.label)?;
-
-        Ok(ir::TrapRef {
-            label: label,
-            env: env,
-        })
     }
 
     fn tr_label(&mut self, t: ast::Label) -> Try<ir::Label> {

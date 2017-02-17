@@ -3,7 +3,7 @@ pub mod translate;
 
 #[derive(Clone, Debug)]
 pub struct Program {
-    blocks: Vec<Block>,
+    pub blocks: Vec<Block>,
 }
 
 #[derive(Copy, Clone, Debug, Eq, Hash, PartialEq)]
