@@ -97,8 +97,9 @@ pub trait Visitor {
                 self.visit_id_assign(name)?;
             },
 
-            &Stmt::LetFn { .. } => {
-                // TODO: Consider implementing this
+            &Stmt::Arm { ref target, ref with_env, .. } => {
+                self.visit_label(target)?;
+                self.visit_expr(with_env)?;
             },
 
             &Stmt::Listen { ref name, ref arms } => {
@@ -152,7 +153,7 @@ pub trait Visitor {
 
     fn visit_expr(&mut self, t: &Expr) -> Try<()> {
         match t {
-            &Expr::Arg => Ok(()),
+            &Expr::Arg(_) => Ok(()),
 
             &Expr::Atom(ref atom) => {
                 self.visit_atom(atom)

@@ -1,11 +1,12 @@
 use ast::*;
+use ast::pass::*;
 use ast::rewrite::*;
 
 use driver::Try;
 
-impl Program {
+impl DesugaredProgram {
     pub fn desugar_weave(self) -> Try<Self> {
-        Pass.rw_program(self)
+        Pass.rw_desugared(self)
     }
 }
 
@@ -19,18 +20,18 @@ impl Pass {
         let mut or_else = Block(vec![]);
 
         for (i, arm) in a.into_iter().enumerate() {
-            let choice = match arm.guard {
+            choices.push(match arm.guard {
                 Cond::LastResort => {
                     or_else = arm.body;
                     continue;
                 },
 
-                other => vec![
+                other => Expr::List(vec![
                     Expr::Bool(Box::new(other)),
                     Expr::Int(i as i32),
                     arm.message,
-                ],
-            };
+                ]),
+            });
 
             arms.push(MatchArm {
                 pattern: Pat::Match(Expr::Int(i as i32)),

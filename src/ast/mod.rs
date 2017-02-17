@@ -62,6 +62,12 @@ pub struct TrapLambda {
 pub enum Stmt {
     Empty,
 
+    Arm {
+        target: Label,
+        with_env: Expr,
+        blocking: bool,
+    },
+
     Disarm {
         target: Label,
     },
@@ -79,11 +85,6 @@ pub enum Stmt {
     Let {
         value: Expr,
         name: Ident,
-    },
-
-    LetFn {
-        lambda: TrapLambda,
-        blocking: bool,
     },
 
     Listen {
@@ -160,6 +161,8 @@ pub struct QfdLabel {
 
 #[derive(Clone, Debug, PartialEq)]
 pub enum Label {
+    Qualified(QfdLabel),
+
     Local {
         name: String,
     },
@@ -174,7 +177,7 @@ pub struct Ident {
 
 #[derive(Clone, Debug, PartialEq)]
 pub enum Expr {
-    Arg,
+    Arg(u32),
     Atom(Atom),
     Bool(Box<Cond>),
     Id(Ident),

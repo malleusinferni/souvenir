@@ -1,13 +1,14 @@
 use std::collections::HashMap;
 
 use ast::*;
+use ast::pass::*;
 use ast::rewrite::*;
 
 use driver::Try;
 
-impl Program {
+impl DesugaredProgram {
     pub fn desugar_match(self) -> Try<Self> {
-        Pass.rw_program(self)
+        Pass.rw_desugared(self)
     }
 }
 

@@ -11,6 +11,7 @@ impl Display for ast::Modpath {
 impl Display for ast::Label {
     fn fmt(&self, f: &mut Formatter) -> Result {
         match self {
+            &ast::Label::Qualified(ref qfd) => write!(f, "{}", qfd),
             &ast::Label::Local { ref name } => write!(f, "'{}", name),
             &ast::Label::Anonymous => write!(f, ""),
         }
@@ -134,6 +135,13 @@ impl Display for ast::QfdSceneName {
     fn fmt(&self, f: &mut Formatter) -> Result {
         let &ast::QfdSceneName { ref name, ref in_module } = self;
         write!(f, "{}:{}", in_module, name)
+    }
+}
+
+impl Display for ast::QfdLabel {
+    fn fmt(&self, f: &mut Formatter) -> Result {
+        let &ast::QfdLabel { ref name, ref in_scene } = self;
+        write!(f, "{}'{}", in_scene, name)
     }
 }
 

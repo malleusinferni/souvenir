@@ -1,9 +1,10 @@
 use ast::*;
+use ast::pass::*;
 
 use driver::Try;
 
 #[derive(Clone, Debug)]
-pub struct Counter<T>(u32, fn(u32) -> T);
+pub struct Counter<T>(pub u32, pub fn(u32) -> T);
 
 impl<T> Counter<T> {
     pub fn next(&mut self) -> T {
@@ -14,8 +15,14 @@ impl<T> Counter<T> {
 }
 
 pub trait Rewriter {
-    fn rw_program(&mut self, t: Program) -> Try<Program> {
-        Ok(t) // FIXME: Actually implement this
+    fn rw_desugared(&mut self, t: DesugaredProgram) -> Try<DesugaredProgram> {
+        Ok(DesugaredProgram {
+            preludes: each(t.preludes, |(modpath, t)| {
+                Ok((modpath, self.rw_block(t)?))
+            })?,
+            scenes: each(t.scenes, |t| self.rw_scene(t))?,
+            lambdas: each(t.lambdas, |t| self.rw_lambda(t))?,
+        })
     }
 
     fn rw_scene(&mut self, t: Scene) -> Try<Scene> {
@@ -24,6 +31,16 @@ pub trait Rewriter {
             args: each(t.args, |t| match t {
                 Some(t) => Ok(Some(self.rw_id_assign(t)?)),
                 None => Ok(None),
+            })?,
+            body: self.rw_block(t.body)?,
+        })
+    }
+
+    fn rw_lambda(&mut self, t: TrapLambda) -> Try<TrapLambda> {
+        Ok(TrapLambda {
+            label: self.rw_label(t.label)?,
+            captures: each(t.captures, |t| {
+                self.rw_id_assign(t)
             })?,
             body: self.rw_block(t.body)?,
         })
@@ -57,8 +74,9 @@ pub trait Rewriter {
                 name: self.rw_id_assign(name)?,
             },
 
-            Stmt::LetFn { lambda, blocking } => Stmt::LetFn {
-                lambda: self.rw_lambda(lambda)?,
+            Stmt::Arm { target, with_env, blocking } => Stmt::Arm {
+                target: self.rw_label(target)?,
+                with_env: self.rw_expr(with_env)?,
                 blocking: blocking,
             },
 
@@ -168,7 +186,7 @@ pub trait Rewriter {
             Expr::PidOfSelf => Expr::PidOfSelf,
             Expr::PidZero => Expr::PidZero,
             Expr::Infinity => Expr::Infinity,
-            Expr::Arg => Expr::Arg,
+            Expr::Arg(n) => Expr::Arg(n),
 
             Expr::Bool(cond) => Expr::Bool({
                 Box::new(self.rw_cond(*cond)?)
@@ -243,10 +261,6 @@ pub trait Rewriter {
         let name = self.rw_scene_name(name)?;
         let args = each(args, |t| self.rw_expr(t))?;
         Ok(Call(name, args))
-    }
-
-    fn rw_lambda(&mut self, t: TrapLambda) -> Try<TrapLambda> {
-        Ok(t) // FIXME: Do we allow this at all?
     }
 
     fn rw_id_eval(&mut self, t: Ident) -> Try<Expr> {

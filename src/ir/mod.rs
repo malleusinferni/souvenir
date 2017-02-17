@@ -34,7 +34,6 @@ pub struct Block {
 #[derive(Clone, Debug)]
 pub struct BlockInfo {
     pub id: u32,
-    pub first_reg: u32,
     pub flags_needed: u32,
 }
 

@@ -3,11 +3,42 @@ use std::collections::HashMap;
 use ast;
 use ir;
 
+use ast::rewrite::Counter;
+
 use driver::Try;
 
-impl ast::Program {
+impl ast::pass::DesugaredProgram {
     pub fn translate(self) -> Try<ir::Program> {
-        let mut builder: Builder = ice!("Unimplemented");
+        fn maketemp(id: u32) -> String {
+            format!("TEMP%{:X}", id)
+        }
+
+        let mut builder = Builder {
+            blocks: Vec::with_capacity(self.count_blocks()),
+
+            pc: 0,
+            bindings: Vec::new(),
+            const_str: HashMap::new(),
+            const_atom: HashMap::new(),
+            next_var: Counter(0, ir::Var),
+            next_tmp: Counter(0, maketemp),
+
+            preludes: HashMap::new(),
+            scenes: HashMap::new(),
+            labels: HashMap::new(),
+        };
+
+        for scene in self.scenes {
+            let label = builder.create_block()?;
+            let name = scene.name.qualified()?;
+            builder.scenes.insert(name, label);
+        }
+
+        ice!("TODO: Finish implementing")
+    }
+
+    fn count_blocks(&self) -> usize {
+        1024 // TODO: Actually count them
     }
 }
 
@@ -25,11 +56,11 @@ struct Builder {
     blocks: Vec<Block>,
 
     pc: usize,
-    closures: Vec<ast::TrapLambda>,
     bindings: Vec<(String, ir::Var)>,
     const_str: HashMap<String, ir::Var>,
     const_atom: HashMap<String, ir::Var>,
-    next_temp_id: u32,
+    next_var: Counter<ir::Var>,
+    next_tmp: Counter<String>,
 
     preludes: HashMap<ast::Modpath, ir::Label>,
     scenes: HashMap<ast::QfdSceneName, ir::Label>,
@@ -75,12 +106,11 @@ impl Block {
 }
 
 impl Builder {
-    fn create_block(&mut self, r: u32) -> Try<ir::Label> {
+    fn create_block(&mut self) -> Try<ir::Label> {
         let id = self.blocks.len() as u32;
 
         let info = ir::BlockInfo {
             id: id,
-            first_reg: r,
             flags_needed: 0,
         };
 
@@ -93,17 +123,15 @@ impl Builder {
     }
 
     fn assign(&mut self, name: &str, value: ir::Rvalue) -> Try<ir::Var> {
-        let id = self.bindings.len() as u32;
-        let reg = ir::Var(id);
-        self.bindings.push((name.to_owned(), reg));
-        self.emit(ir::Op::Let(reg, value));
-        Ok(reg)
+        let var = self.next_var.next();
+        self.bindings.push((name.to_owned(), var));
+        self.emit(ir::Op::Let(var, value));
+        Ok(var)
     }
 
     fn assign_temp(&mut self, value: ir::Rvalue) -> Try<ir::Var> {
-        let id = self.next_temp_id;
-        self.next_temp_id += 1;
-        self.assign(&format!("TEMP#{:X}", id), value)
+        let name = self.next_tmp.next();
+        self.assign(&name, value)
     }
 
     fn eval(&self, name: &str) -> Try<ir::Var> {
@@ -163,10 +191,9 @@ impl Builder {
             ast::Stmt::If { test, success, failure } => {
                 let test = self.tr_cond(test)?;
 
-                let first_reg = self.current()?.info().first_reg;
-                let succ = self.create_block(first_reg)?;
-                let fail = self.create_block(first_reg)?;
-                let next = self.create_block(first_reg)?;
+                let succ = self.create_block()?;
+                let fail = self.create_block()?;
+                let next = self.create_block()?;
 
                 self.current()?
                     .exit(ir::Exit::IfThenElse(test, succ, fail))?;
@@ -192,12 +219,16 @@ impl Builder {
                 Ok(())
             },
 
-            ast::Stmt::LetFn { lambda, blocking } => {
-                let lambda = self.tr_lambda(lambda)?;
+            ast::Stmt::Arm { target, with_env, blocking } => {
+                let trap_ref = ir::TrapRef {
+                    label: self.tr_label(target)?,
+                    env: self.tr_expr(with_env)?,
+                };
+
                 if blocking {
-                    self.emit(ir::Op::Listen(lambda))
+                    self.emit(ir::Op::Listen(trap_ref))
                 } else {
-                    self.emit(ir::Op::Arm(lambda))
+                    self.emit(ir::Op::Arm(trap_ref))
                 }
             },
 
@@ -317,7 +348,7 @@ impl Builder {
 
             ast::Expr::Infinity => ice!("Unimplemented"),
 
-            ast::Expr::Arg => ice!("Unimplemented"),
+            ast::Expr::Arg(_) => ice!("Unimplemented"),
         }
     }
 
@@ -400,10 +431,18 @@ impl Builder {
     }
 
     fn tr_label(&mut self, t: ast::Label) -> Try<ir::Label> {
-        ice!("Unimplemented")
+        let t = t.qualified()?;
+        match self.labels.get(&t) {
+            Some(&label) => Ok(label),
+            None => ice!("Label {} has no entry point", t),
+        }
     }
 
     fn tr_scene_name(&mut self, t: ast::SceneName) -> Try<ir::Label> {
-        ice!("Unimplemented")
+        let t = t.qualified()?;
+        match self.scenes.get(&t) {
+            Some(&label) => Ok(label),
+            None => ice!("Scene name {} has no entry point", t),
+        }
     }
 }
