@@ -107,12 +107,12 @@ impl Display for Instr {
                     write!(f, "export {} -> {}", src, id)
                 },
 
-                Io::Spawn(a, EnvId(b), c, dst) => {
-                    write!(f, "spawn {}, {}, {} -> {}", a, b, c, dst)
+                Io::Spawn(arg, label, dst) => {
+                    write!(f, "spawn {}, {} -> {}", arg, label, dst)
                 },
 
-                Io::Recur(a, EnvId(b), c) => {
-                    write!(f, "recur {}, {}, {}", a, b, c)
+                Io::Recur(arg, label) => {
+                    write!(f, "recur {}, {}", arg, label)
                 },
 
                 Io::GetPid(dst) => {

@@ -96,7 +96,7 @@ pub struct Program {
     /// Interned (global) string constants.
     pub str_table: StringInterner<StrId>,
 
-    //pub env_table: HashMap<Label, EnvId>,
+    pub env_table: VecMap<Label, EnvId>,
 }
 
 /// Unencoded (immediately executable) VM instructions.
@@ -142,8 +142,8 @@ pub enum Instr {
 #[derive(Copy, Clone, Debug)]
 pub enum Io {
     Export(Reg, EnvId),
-    Recur(Reg, EnvId, Label),
-    Spawn(Reg, EnvId, Label, Reg),
+    Recur(Reg, Label),
+    Spawn(Reg, Label, Reg),
     GetPid(Reg),
     SendMsg(Reg, Reg),
     Roll(Reg, Reg),
@@ -899,12 +899,13 @@ impl Scheduler {
                 unimplemented!()
             },
 
-            Io::Spawn(argv, env_id, label, dst) => {
+            Io::Spawn(argv, label, dst) => {
                 let mut new = self.create();
 
                 {
                     let argv = process.stack.current().get(argv)?
                         .in_heap(&process.heap);
+                    let &env_id = self.program.env_table.get(label)?;
                     let env = self.env_table.get(env_id)?
                         .in_heap(&self.global_heap);
 
@@ -919,13 +920,14 @@ impl Scheduler {
                 Ok(None)
             },
 
-            Io::Recur(argv, env_id, label) => {
+            Io::Recur(argv, label) => {
                 // Same as Spawn, but we replace the current process
                 let mut new = self.create();
 
                 {
                     let argv = process.stack.current().get(argv)?
                         .in_heap(&process.heap);
+                    let &env_id = self.program.env_table.get(label)?;
                     let env = self.env_table.get(env_id)?
                         .in_heap(&self.global_heap);
 

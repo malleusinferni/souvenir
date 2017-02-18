@@ -2,7 +2,7 @@ use std::collections::HashMap;
 
 use string_interner::StringInterner;
 
-use vecmap::CheckedFrom;
+use vecmap::{VecMap, CheckedFrom};
 
 use ir;
 use vm;
@@ -30,19 +30,19 @@ impl ir::Program {
             jump_table: translator.jump_table,
             str_table: translator.str_table,
             atom_table: translator.atom_table,
-            //env_table: translator.env_table,
+            env_table: translator.env_table,
         })
     }
 
-    pub fn build_env_table(&self) -> Try<HashMap<ir::Label, vm::EnvId>> {
+    pub fn build_env_table(&self) -> Try<VecMap<vm::Label, vm::EnvId>> {
         //ice!("Unimplemented: Env table construction");
-        Ok(HashMap::new())
+        Ok(vec![].into()) // FIXME: Lookup will fail at execution time
     }
 }
 
 struct Translator {
     registers: HashMap<ir::Var, vm::Reg>,
-    env_table: HashMap<ir::Label, vm::EnvId>,
+    env_table: VecMap<vm::Label, vm::EnvId>,
     code: Vec<vm::Instr>,
     jump_table: vm::JumpTable,
     str_table: StringInterner<vm::StrId>,
@@ -199,13 +199,8 @@ impl Translator {
                     let argv = self.tr_var(call.argv)?;
                     let label = self.tr_label(call.label)?;
 
-                    // FIXME: We need to keep the env table around anyway,
-                    // so just look up env IDs dynamically
-                    let &env = self.env_table.get(&call.label)
-                        .unwrap_or(&vm::EnvId(0xffffffff));
-
                     self.emit(vm::Instr::Blocking({
-                        vm::Io::Spawn(argv, env, label, dst)
+                        vm::Io::Spawn(argv, label, dst)
                     }))
                 },
 
@@ -335,15 +330,10 @@ impl Translator {
             },
 
             ir::Exit::Recur(ir::FnCall { argv, label }) => {
-                let env_id = match self.env_table.get(&label) {
-                    Some(&id) => id,
-                    None => ice!("Missing env ID for label"),
-                };
-
                 let label = self.tr_label(label)?;
                 let argv = self.tr_var(argv)?;
                 self.emit(vm::Instr::Blocking({
-                    vm::Io::Recur(argv, env_id, label)
+                    vm::Io::Recur(argv, label)
                 }))
             },
 
