@@ -26,6 +26,11 @@ impl Display for Program {
             writeln!(f, "\t{}", instr)?;
         }
 
+        for (key, value) in self.str_table.iter() {
+            writeln!(f, "STR({}):", key.0)?;
+            writeln!(f, "\t{:?}", value)?;
+        }
+
         Ok(())
     }
 }

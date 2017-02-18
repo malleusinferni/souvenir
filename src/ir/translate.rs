@@ -239,6 +239,11 @@ impl Translator {
                 self.emit(vm::Instr::Write(src, dst))
             },
 
+            ir::Op::Trace(var) => {
+                let var = self.tr_var(var)?;
+                self.emit(vm::Instr::Blocking(vm::Io::Trace(var)))
+            },
+
             ir::Op::Wait(val) => {
                 // FIXME: Actually translate time units
                 self.emit(vm::Instr::Blocking(vm::Io::Sleep(9000.0)))

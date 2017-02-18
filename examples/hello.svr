@@ -1,0 +1,4 @@
+let GlobalList = [#hello, #world]
+== start
+trace GlobalList
+> Hello, world.
