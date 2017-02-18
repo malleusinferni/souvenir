@@ -96,7 +96,6 @@ pub enum Exit {
 #[derive(Clone, Debug)]
 pub enum Rvalue {
     Var(Var),
-    Arg(u32),
     Int(i32),
     Add(Var, Var),
     Sub(Var, Var),
@@ -104,6 +103,7 @@ pub enum Rvalue {
     Mul(Var, Var),
     Roll(Var, Var),
     Load(Ptr),
+    LoadArg(u32),
     LoadEnv(u32),
     FromBool(Flag),
     Spawn(FnCall),
@@ -122,7 +122,7 @@ pub enum Tvalue {
     Lt(Var, Var),
     Gte(Var, Var),
     Lte(Var, Var),
-    HasLen(Var, Var),
+    HasLen(Var, u32),
     Nonzero(Var),
     True,
     False,

@@ -118,9 +118,11 @@ pub enum Instr {
     Lt(Reg, Reg, Flag),
     And(Flag, Flag),
     Or(Flag, Flag),
+    Set(Flag, Flag),
     Not(Flag),
     True(Flag),
     False(Flag),
+    CheckSize(ListLen, Reg, Flag),
     LoadLit(Value, Reg),
     Alloc(ListLen, Reg),
     Read(Ptr, Reg),
@@ -592,6 +594,24 @@ impl Process {
 
             Instr::False(flag) => {
                 self.stack.current().set_flag(flag, false)?;
+            },
+
+            Instr::Set(src, dst) => {
+                let value = self.stack.current().get_flag(src)?;
+                self.stack.current().set_flag(dst, value)?;
+            },
+
+            Instr::CheckSize(ListLen(expected), reg, flag) => {
+                let result = match self.stack.current().get(reg)? {
+                    Value::ListAddr(addr) => {
+                        let found = self.heap.size_of(addr)?;
+                        expected == found
+                    },
+
+                    _ => false,
+                };
+
+                self.stack.current().set_flag(flag, result)?;
             },
 
             Instr::LoadLit(value, dst) => {

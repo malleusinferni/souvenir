@@ -274,7 +274,7 @@ impl Builder {
 
         for (i, arg) in t.args.into_iter().enumerate() {
             if let Some(ast::Ident { name }) = arg {
-                self.assign(&name, ir::Rvalue::Arg(i as u32))?;
+                self.assign(&name, ir::Rvalue::LoadArg(i as u32))?;
             }
         }
 
@@ -496,7 +496,7 @@ impl Builder {
             },
 
             ast::Expr::Arg(n) => {
-                self.assign_temp(ir::Rvalue::Arg(n))
+                self.assign_temp(ir::Rvalue::LoadArg(n))
             },
 
             ast::Expr::PidZero => ice!("Unimplemented: PID zero"),
@@ -513,7 +513,6 @@ impl Builder {
 
             ast::Cond::HasLength(list, len) => {
                 let list = self.tr_expr(list)?;
-                let len = self.tr_expr(ast::Expr::Int(len as i32))?;
                 self.set(ir::Tvalue::HasLen(list, len))
             },
 

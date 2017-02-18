@@ -56,6 +56,8 @@ impl Display for Instr {
             &Instr::Div(src, dst) => write!(f, "div {} -> {}", src, dst),
             &Instr::Mul(src, dst) => write!(f, "mul {} -> {}", src, dst),
 
+            &Instr::Set(src, dst) => write!(f, "test {} -> {}", src, dst),
+
             &Instr::Not(dst) => write!(f, "not {}", dst),
 
             &Instr::Eql(lhs, rhs, dst) => {
@@ -76,6 +78,10 @@ impl Display for Instr {
 
             &Instr::Lte(lhs, rhs, dst) => {
                 write!(f, "test {} lte {} -> {}", lhs, rhs, dst)
+            },
+
+            &Instr::CheckSize(ListLen(len), src, dst) => {
+                write!(f, "test len({}) eq {} -> {}", src, len, dst)
             },
 
             &Instr::And(src, dst) => write!(f, "and {} -> {}", src, dst),

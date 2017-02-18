@@ -108,7 +108,6 @@ pub trait Visitor {
                 self.visit_var_read(var)?;
             },
 
-            &Rvalue::Arg(_) => (),
             &Rvalue::Int(_) => (),
 
             &Rvalue::Add(ref lhs, ref rhs) => {
@@ -139,6 +138,8 @@ pub trait Visitor {
             &Rvalue::Load(ref ptr) => {
                 self.visit_var_read(&ptr.start_addr)?;
             },
+
+            &Rvalue::LoadArg(_) => (),
 
             &Rvalue::LoadEnv(_) => (),
 

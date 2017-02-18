@@ -170,6 +170,16 @@ impl Translator {
                     self.emit(vm::Instr::Read(ptr, dst))
                 },
 
+                ir::Rvalue::LoadArg(offset) => {
+                    let ptr = vm::Ptr {
+                        addr: vm::Reg::arg(),
+                        offset: offset,
+                    };
+
+                    let dst = self.tr_var(dst)?;
+                    self.emit(vm::Instr::Read(ptr, dst))
+                },
+
                 ir::Rvalue::LoadEnv(offset) => {
                     let ptr = vm::Ptr {
                         addr: vm::Reg::env(),
@@ -217,6 +227,50 @@ impl Translator {
                 _ => ice!("Unimplemented: Rvalue {:?}", value),
             },
 
+            ir::Op::Set(dst, value) => match value {
+                ir::Tvalue::Flag(src) => {
+                    let src = self.tr_flag(src)?;
+                    let dst = self.tr_flag(dst)?;
+                    self.emit(vm::Instr::Set(src, dst))
+                },
+
+                ir::Tvalue::HasLen(list, len) => {
+                    let list = self.tr_var(list)?;
+                    let len = vm::ListLen(len);
+                    let dst = self.tr_flag(dst)?;
+                    self.emit(vm::Instr::CheckSize(len, list, dst))
+                },
+
+                ir::Tvalue::Eql(lhs, rhs) => {
+                    let lhs = self.tr_var(lhs)?;
+                    let rhs = self.tr_var(rhs)?;
+                    let dst = self.tr_flag(dst)?;
+                    self.emit(vm::Instr::Eql(lhs, rhs, dst))
+                },
+
+                ir::Tvalue::True => {
+                    let dst = self.tr_flag(dst)?;
+                    self.emit(vm::Instr::True(dst))
+                },
+
+                ir::Tvalue::False => {
+                    let dst = self.tr_flag(dst)?;
+                    self.emit(vm::Instr::False(dst))
+                },
+
+                ir::Tvalue::And(flags) => {
+                    let dst = self.tr_flag(dst)?;
+                    self.emit(vm::Instr::True(dst))?;
+                    for flag in flags {
+                        let flag = self.tr_flag(flag)?;
+                        self.emit(vm::Instr::And(flag, dst))?;
+                    }
+                    Ok(())
+                },
+
+                _ => ice!("Unimplemented: Tvalue {:?}", value),
+            },
+
             ir::Op::Listen(trap_ref) => {
                 let env = self.tr_var(trap_ref.env)?;
                 let label = self.tr_label(trap_ref.label)?;
@@ -226,6 +280,14 @@ impl Translator {
             ir::Op::Say(var) => {
                 let var = self.tr_var(var)?;
                 self.emit(vm::Instr::Blocking(vm::Io::Say(var)))
+            },
+
+            ir::Op::SendMsg(target, message) => {
+                let target = self.tr_var(target)?;
+                let message = self.tr_var(message)?;
+                self.emit(vm::Instr::Blocking({
+                    vm::Io::SendMsg(message, target)
+                }))
             },
 
             ir::Op::Store(src, dst) => {
@@ -307,6 +369,7 @@ impl Translator {
     }
 
     fn tr_flag(&mut self, t: ir::Flag) -> Try<vm::Flag> {
+        // FIXME: Allocate flags
         Ok(vm::Flag(t.0))
     }
 
