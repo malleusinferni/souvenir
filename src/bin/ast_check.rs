@@ -19,7 +19,7 @@ fn main() {
     };
 
     match program.compile() {
-        Ok(program) => println!("{:#?}", program),
+        Ok(program) => println!("{}", program),
         Err(e) => println!("{}", e),
     };
 }

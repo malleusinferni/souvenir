@@ -182,8 +182,8 @@ pub struct ListLen(pub u32);
 
 #[derive(Copy, Clone, Debug, PartialEq)]
 pub struct Ptr {
-    addr: Reg,
-    offset: u32,
+    pub addr: Reg,
+    pub offset: u32,
 }
 
 pub struct LocalValue<'a> {
@@ -269,7 +269,7 @@ pub enum RunErr {
 
 pub type Ret<T> = Result<T, RunErr>;
 
-const REG_COUNT: usize = 0x400;
+pub const REG_COUNT: usize = 0x400;
 
 impl Default for Instr {
     fn default() -> Self { Instr::Nop }

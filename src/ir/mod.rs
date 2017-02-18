@@ -1,4 +1,5 @@
 pub mod pass;
+pub mod visit;
 pub mod allocate;
 pub mod translate;
 
@@ -70,7 +71,7 @@ pub struct Ptr {
 pub enum Op {
     Arm(TrapRef),
     Disarm(Label),
-    Discard(Rvalue),
+    //Discard(Rvalue),
     Export(Env, Var),
     Let(Var, Rvalue),
     Listen(TrapRef),

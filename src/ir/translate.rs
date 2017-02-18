@@ -35,7 +35,8 @@ impl ir::Program {
     }
 
     pub fn build_env_table(&self) -> Try<HashMap<ir::Label, vm::EnvId>> {
-        ice!("Unimplemented: Env table construction");
+        //ice!("Unimplemented: Env table construction");
+        Ok(HashMap::new())
     }
 }
 
@@ -51,7 +52,8 @@ struct Translator {
 
 impl Translator {
     fn emit(&mut self, i: vm::Instr) -> Try<()> {
-        ice!("Unimplemented")
+        self.code.push(i);
+        Ok(())
     }
 
     fn tr_block(&mut self, t: ir::Block) -> Try<()> {
@@ -86,6 +88,23 @@ impl Translator {
         };
 
         match t {
+            ir::Op::Arm(trap_ref) => {
+                let env = self.tr_var(trap_ref.env)?;
+                let label = self.tr_label(trap_ref.label)?;
+                self.emit(vm::Instr::Arm(env, label))
+            },
+
+            ir::Op::Disarm(label) => {
+                let label = self.tr_label(label)?;
+                self.emit(vm::Instr::Disarm(label))
+            },
+
+            ir::Op::Export(id, var) => {
+                let id = vm::EnvId(id.0);
+                let var = self.tr_var(var)?;
+                self.emit(vm::Instr::Blocking(vm::Io::Export(var, id)))
+            },
+
             ir::Op::Let(dst, value) => match value {
                 ir::Rvalue::Var(src) => {
                     let dst = self.tr_var(dst)?;
@@ -133,7 +152,96 @@ impl Translator {
                     tr_binop(self, vm::Instr::Mul, lhs, rhs, dst)
                 },
 
+                ir::Rvalue::Roll(lhs, rhs) => {
+                    fn roll(a: vm::Reg, b: vm::Reg) -> vm::Instr {
+                        vm::Instr::Blocking(vm::Io::Roll(b, a))
+                    }
+
+                    tr_binop(self, roll, lhs, rhs, dst)
+                },
+
+                ir::Rvalue::Load(ptr) => {
+                    let ptr = vm::Ptr {
+                        addr: self.tr_var(ptr.start_addr)?,
+                        offset: ptr.offset,
+                    };
+
+                    let dst = self.tr_var(dst)?;
+                    self.emit(vm::Instr::Read(ptr, dst))
+                },
+
+                ir::Rvalue::LoadEnv(offset) => {
+                    let ptr = vm::Ptr {
+                        addr: vm::Reg::env(),
+                        offset: offset,
+                    };
+
+                    let dst = self.tr_var(dst)?;
+                    self.emit(vm::Instr::Read(ptr, dst))
+                },
+
+                ir::Rvalue::FromBool(_) => {
+                    ice!("Unimplemented: ir::Rvalue::FromBool")
+                },
+
+                ir::Rvalue::Spawn(call) => {
+                    let dst = self.tr_var(dst)?;
+                    let argv = self.tr_var(call.argv)?;
+                    let label = self.tr_label(call.label)?;
+
+                    // FIXME: We need to keep the env table around anyway,
+                    // so just look up env IDs dynamically
+                    let &env = self.env_table.get(&call.label)
+                        .unwrap_or(&vm::EnvId(0xffffffff));
+
+                    self.emit(vm::Instr::Blocking({
+                        vm::Io::Spawn(argv, env, label, dst)
+                    }))
+                },
+
+                ir::Rvalue::Splice(vars) => {
+                    ice!("Unimplemented: splice")
+                },
+
+                ir::Rvalue::Alloc(size) => {
+                    let size = vm::ListLen(size);
+                    let dst = self.tr_var(dst)?;
+                    self.emit(vm::Instr::Alloc(size, dst))
+                },
+
+                ir::Rvalue::PidOfSelf => {
+                    let dst = self.tr_var(dst)?;
+                    self.emit(vm::Instr::Blocking(vm::Io::GetPid(dst)))
+                },
+
                 _ => ice!("Unimplemented: Rvalue {:?}", value),
+            },
+
+            ir::Op::Listen(trap_ref) => {
+                let env = self.tr_var(trap_ref.env)?;
+                let label = self.tr_label(trap_ref.label)?;
+                self.emit(vm::Instr::Blocking(vm::Io::ArmAtomic(env, label)))
+            },
+
+            ir::Op::Say(var) => {
+                let var = self.tr_var(var)?;
+                self.emit(vm::Instr::Blocking(vm::Io::Say(var)))
+            },
+
+            ir::Op::Store(src, dst) => {
+                let dst = vm::Ptr {
+                    addr: self.tr_var(dst.start_addr)?,
+                    offset: dst.offset,
+                };
+
+                let src = self.tr_var(src)?;
+
+                self.emit(vm::Instr::Write(src, dst))
+            },
+
+            ir::Op::Wait(val) => {
+                // FIXME: Actually translate time units
+                self.emit(vm::Instr::Blocking(vm::Io::Sleep(9000.0)))
             },
 
             _ => ice!("Unimplemented: IR op {:?}", t),
