@@ -122,6 +122,8 @@ pub enum Instr {
     Not(Flag),
     True(Flag),
     False(Flag),
+    Reify(Flag, Reg),
+    Nonzero(Reg, Flag),
     CheckSize(ListLen, Reg, Flag),
     LoadLit(Value, Reg),
     Alloc(ListLen, Reg),
@@ -594,6 +596,16 @@ impl Process {
 
             Instr::False(flag) => {
                 self.stack.current().set_flag(flag, false)?;
+            },
+
+            Instr::Reify(flag, dst) => {
+                let test = self.stack.current().get_flag(flag)?;
+                self.stack.current().set(dst, test.into())?;
+            },
+
+            Instr::Nonzero(src, flag) => {
+                let value = self.stack.current().get(src)?;
+                self.stack.current().set_flag(flag, value.as_bool()?)?;
             },
 
             Instr::Set(src, dst) => {
@@ -1115,6 +1127,12 @@ impl Tag {
 impl From<i32> for Value {
     fn from(i: i32) -> Self {
         Value::Int(i)
+    }
+}
+
+impl From<bool> for Value {
+    fn from(b: bool) -> Self {
+        Value::Int(if b { 1 } else { 0 })
     }
 }
 

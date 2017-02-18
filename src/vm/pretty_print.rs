@@ -60,6 +60,10 @@ impl Display for Instr {
 
             &Instr::Not(dst) => write!(f, "not {}", dst),
 
+            &Instr::Nonzero(src, dst) => {
+                write!(f, "test nonzero {} -> {}", src, dst)
+            },
+
             &Instr::Eql(lhs, rhs, dst) => {
                 write!(f, "test {} eq {} -> {}", lhs, rhs, dst)
             },
@@ -82,6 +86,10 @@ impl Display for Instr {
 
             &Instr::CheckSize(ListLen(len), src, dst) => {
                 write!(f, "test len({}) eq {} -> {}", src, len, dst)
+            },
+
+            &Instr::Reify(src, dst) => {
+                write!(f, "let int({}) -> {}", src, dst)
             },
 
             &Instr::And(src, dst) => write!(f, "and {} -> {}", src, dst),

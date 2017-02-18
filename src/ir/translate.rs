@@ -190,8 +190,16 @@ impl Translator {
                     self.emit(vm::Instr::Read(ptr, dst))
                 },
 
-                ir::Rvalue::FromBool(_) => {
-                    ice!("Unimplemented: ir::Rvalue::FromBool")
+                ir::Rvalue::MenuChoice(src) => {
+                    let dst = self.tr_var(dst)?;
+                    let src = self.tr_var(src)?;
+                    self.emit(vm::Instr::Blocking(vm::Io::Ask(src, dst)))
+                },
+
+                ir::Rvalue::FromBool(src) => {
+                    let dst = self.tr_var(dst)?;
+                    let src = self.tr_flag(src)?;
+                    self.emit(vm::Instr::Reify(src, dst))
                 },
 
                 ir::Rvalue::Spawn(call) => {
@@ -218,8 +226,6 @@ impl Translator {
                     let dst = self.tr_var(dst)?;
                     self.emit(vm::Instr::Blocking(vm::Io::GetPid(dst)))
                 },
-
-                _ => ice!("Unimplemented: Rvalue {:?}", value),
             },
 
             ir::Op::Set(dst, value) => match value {
@@ -243,6 +249,34 @@ impl Translator {
                     self.emit(vm::Instr::Eql(lhs, rhs, dst))
                 },
 
+                ir::Tvalue::Gt(lhs, rhs) => {
+                    let lhs = self.tr_var(lhs)?;
+                    let rhs = self.tr_var(rhs)?;
+                    let dst = self.tr_flag(dst)?;
+                    self.emit(vm::Instr::Gt(lhs, rhs, dst))
+                },
+
+                ir::Tvalue::Gte(lhs, rhs) => {
+                    let lhs = self.tr_var(lhs)?;
+                    let rhs = self.tr_var(rhs)?;
+                    let dst = self.tr_flag(dst)?;
+                    self.emit(vm::Instr::Gte(lhs, rhs, dst))
+                },
+
+                ir::Tvalue::Lt(lhs, rhs) => {
+                    let lhs = self.tr_var(lhs)?;
+                    let rhs = self.tr_var(rhs)?;
+                    let dst = self.tr_flag(dst)?;
+                    self.emit(vm::Instr::Lt(lhs, rhs, dst))
+                },
+
+                ir::Tvalue::Lte(lhs, rhs) => {
+                    let lhs = self.tr_var(lhs)?;
+                    let rhs = self.tr_var(rhs)?;
+                    let dst = self.tr_flag(dst)?;
+                    self.emit(vm::Instr::Lte(lhs, rhs, dst))
+                },
+
                 ir::Tvalue::True => {
                     let dst = self.tr_flag(dst)?;
                     self.emit(vm::Instr::True(dst))
@@ -251,6 +285,21 @@ impl Translator {
                 ir::Tvalue::False => {
                     let dst = self.tr_flag(dst)?;
                     self.emit(vm::Instr::False(dst))
+                },
+
+                ir::Tvalue::Not(src) => {
+                    let src = self.tr_flag(src)?;
+                    let dst = self.tr_flag(dst)?;
+                    if src != dst {
+                        self.emit(vm::Instr::Set(src, dst))?;
+                    }
+                    self.emit(vm::Instr::Not(dst))
+                },
+
+                ir::Tvalue::Nonzero(src) => {
+                    let src = self.tr_var(src)?;
+                    let dst = self.tr_flag(dst)?;
+                    self.emit(vm::Instr::Nonzero(src, dst))
                 },
 
                 ir::Tvalue::And(flags) => {
@@ -263,7 +312,15 @@ impl Translator {
                     Ok(())
                 },
 
-                _ => ice!("Unimplemented: Tvalue {:?}", value),
+                ir::Tvalue::Or(flags) => {
+                    let dst = self.tr_flag(dst)?;
+                    self.emit(vm::Instr::True(dst))?;
+                    for flag in flags {
+                        let flag = self.tr_flag(flag)?;
+                        self.emit(vm::Instr::Or(flag, dst))?;
+                    }
+                    Ok(())
+                },
             },
 
             ir::Op::Listen(trap_ref) => {
