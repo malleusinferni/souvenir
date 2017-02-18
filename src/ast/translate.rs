@@ -186,19 +186,33 @@ impl Builder {
     }
 
     fn capture_env(&mut self, modpath: ast::Modpath) -> Try<()> {
-        let contents = ast::Expr::List(self.bindings.iter().map(|&(ref n, v)| {
-            ast::Expr::Id(ast::Ident { name: n.clone() })
-        }).collect::<Vec<ast::Expr>>());
+        let named_vars = {
+            self.bindings.iter().filter_map(|&(ref name, _)| {
+                if name.contains("TEMP%") {
+                    None
+                } else {
+                    Some(name.clone())
+                }
+            }).collect::<Vec<String>>()
+        };
 
-        let list = self.tr_expr(contents)?;
-        let env = ir::Env(self.envs.len() as u32);
-        self.emit(ir::Op::Export(env, list))?;
+        let env_items = {
+            self.tr_expr(ast::Expr::List({
+                named_vars.iter().map(|name| ast::Expr::Id(ast::Ident {
+                    name: name.clone(),
+                })).collect()
+            }))?
+        };
 
-        let mut mappings = Vec::with_capacity(self.bindings.len());
-        for (i, (name, _)) in self.bindings.drain(..).enumerate() {
-            mappings.push((name, ir::Rvalue::LoadEnv(i as u32)));
-        }
+        let env_id = ir::Env(self.envs.len() as u32);
+        self.emit(ir::Op::Export(env_id, env_items))?;
+
+        let mappings = named_vars.into_iter().enumerate().map(|(i, name)| {
+            (name, ir::Rvalue::LoadEnv(i as u32))
+        }).collect();
+
         self.envs.insert(modpath, mappings);
+        self.bindings.clear();
 
         Ok(())
     }
