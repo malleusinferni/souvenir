@@ -8,17 +8,31 @@ use driver::Try;
 
 impl DesugaredProgram {
     pub fn desugar_match(self) -> Try<Self> {
-        Pass.rw_desugared(self)
+        fn gensym(id: u32) -> Ident {
+            Ident {
+                name: format!("Gensym%{:04X}%Match", id),
+            }
+        }
+
+        let mut pass = Pass {
+            gensym: Counter(0, gensym),
+        };
+
+        pass.rw_desugared(self)
     }
 }
 
-struct Pass;
+struct Pass {
+    gensym: Counter<Ident>,
+}
 
 impl Pass {
-    fn rw_match(&mut self, v: Expr, t: Vec<MatchArm>, e: Block) -> Try<Stmt> {
+    fn rw_match(&mut self, v: Ident, t: Vec<MatchArm>, e: Block) -> Try<Stmt> {
+        let v = Expr::Id(v);
+
         let mut tail = Stmt::If {
             test: Cond::True,
-            success: e,
+            success: self.rw_block(e)?,
             failure: Block(vec![]),
         };
 
@@ -27,7 +41,7 @@ impl Pass {
                 bindings: HashMap::new(),
                 tests: vec![],
                 path: vec![],
-                root: v.clone(), // TODO: Temporary variable
+                root: v.clone(),
             };
 
             let mut tests = rewriter.pat_to_cond(arm.pattern)?;
@@ -35,7 +49,7 @@ impl Pass {
 
             tail = Stmt::If {
                 test: Cond::And(tests),
-                success: arm.body,
+                success: self.rw_block(arm.body)?,
                 failure: Block(vec![tail]),
             };
         }
@@ -51,13 +65,20 @@ impl Rewriter for Pass {
 
         // self.enter();
         for stmt in input.into_iter() {
-            output.push(match stmt {
+            match stmt {
                 Stmt::Match { value, arms, or_else } => {
-                    self.rw_match(value, arms, or_else)?
+                    let name = self.gensym.next();
+
+                    output.push(Stmt::Let {
+                        name: name.clone(),
+                        value: value,
+                    });
+
+                    output.push(self.rw_match(name, arms, or_else)?);
                 },
 
-                other => self.rw_stmt(other)?,
-            })
+                other => output.push(self.rw_stmt(other)?),
+            }
         }
         //self.leave()?;
 

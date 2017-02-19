@@ -1,0 +1,8 @@
+== start
+
+weave 'outer
+| > Eat another donut.
+    weave 'inner
+    | > Get up off the couch and compose epic poetry.
+    ;;
+;;
