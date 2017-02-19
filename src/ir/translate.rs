@@ -369,8 +369,6 @@ impl Translator {
                 // FIXME: Actually translate time units
                 self.emit(vm::Instr::Blocking(vm::Io::Sleep(9000.0)))
             },
-
-            _ => ice!("Unimplemented: IR op {:?}", t),
         }
     }
 

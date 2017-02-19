@@ -70,10 +70,6 @@ pub trait Visitor {
             &Op::Wait(ref var) => {
                 self.visit_var_read(var)?;
             },
-
-            &Op::Write(ref var) => {
-                self.visit_var_read(var)?;
-            },
         }
 
         Ok(())

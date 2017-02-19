@@ -99,7 +99,6 @@ pub enum Op {
     Set(Flag, Tvalue),
     Trace(Var),
     Wait(Var),
-    Write(Var),
 }
 
 #[derive(Clone, Debug)]
