@@ -271,6 +271,7 @@ pub enum RunErr {
     NoSuchAtom(AtomId),
     NoSuchValue(Value),
     EnvNotInitialized(EnvId),
+    EnvExportMismatch { expected: EnvId, found: EnvId, },
     InitFailure,
 }
 
@@ -839,13 +840,20 @@ impl Scheduler {
 
                     let id = self.env_table.push(env)?;
 
-                    if id != env_id { return Err(RunErr::InitFailure); }
+                    if id != env_id {
+                        return Err(RunErr::EnvExportMismatch {
+                            expected: id,
+                            found: env_id,
+                        });
+                    }
                 },
 
                 _ => {
                     return Err(RunErr::IllegalInstr(init.op));
                 },
             }
+
+            init.fetch(&self.program)?;
         }
 
         self.queue.dead.push_back(init);
