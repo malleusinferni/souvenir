@@ -139,7 +139,7 @@ impl Program {
         self.check_names()?;
         self.check_prelude_restrictions()?;
         let ir = self.desugar()?.translate()?;
-        let bytecode = ir.translate()?;
+        let bytecode = ir.optimize()?.translate()?;
         Ok(bytecode)
     }
 }
