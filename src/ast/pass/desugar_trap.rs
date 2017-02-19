@@ -55,7 +55,7 @@ impl Pass {
         let mut lambda = TrapLambda {
             label: l.clone(),
             captures: vec![],
-            body: body,
+            body: self.rw_block(body)?,
         };
 
         let captures = lambda.find_captures()?;

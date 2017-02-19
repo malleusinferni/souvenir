@@ -2,8 +2,7 @@
 
 trap 'outer
 | AnyValue from AnyActor
-    -- This is not allowed until traps properly close over their environments,
-    -- like they're supposed to.
+    -- This should work now
     trap 'inner
     | _
         AnyActor <- AnyValue
@@ -11,3 +10,7 @@ trap 'outer
 ;;
 
 -> ok(1000000)
+
+== ok(Quantity)
+
+trace Quantity
