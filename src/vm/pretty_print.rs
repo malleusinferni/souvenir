@@ -128,7 +128,7 @@ impl Display for Instr {
                 },
 
                 Io::SendMsg(msg, dst) => {
-                    write!(f, "send {} -> {}", dst, msg)
+                    write!(f, "send {} -> {}", msg, dst)
                 },
 
                 Io::Roll(src, dst) => {
@@ -152,7 +152,7 @@ impl Display for Instr {
                 },
 
                 Io::Ask(src, dst) => {
-                    write!(f, "ask {} -> {}", dst, src)
+                    write!(f, "ask {} -> {}", src, dst)
                 },
             },
         }
