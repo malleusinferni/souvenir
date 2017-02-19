@@ -34,15 +34,22 @@ impl ir::Program {
         })
     }
 
-    pub fn build_env_table(&self) -> Try<VecMap<vm::Label, vm::EnvId>> {
-        //ice!("Unimplemented: Env table construction");
-        Ok(vec![].into()) // FIXME: Lookup will fail at execution time
+    pub fn build_env_table(&self) -> Try<vm::EnvTable> {
+        Ok(self.ep_table.iter().cloned().filter_map(|(label, ep)| {
+            if let ir::EntryPoint::Scene { name, argc, env } = ep {
+                let label = vm::Label(label.0);
+                let env_id = vm::EnvId(env.0);
+                Some((label, env_id))
+            } else {
+                None
+            }
+        }).collect())
     }
 }
 
 struct Translator {
     registers: HashMap<ir::Var, vm::Reg>,
-    env_table: VecMap<vm::Label, vm::EnvId>,
+    env_table: vm::EnvTable,
     code: Vec<vm::Instr>,
     jump_table: vm::JumpTable,
     str_table: StringInterner<vm::StrId>,

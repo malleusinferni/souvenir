@@ -18,6 +18,7 @@ impl DesugaredProgram {
 
         let mut builder = Builder {
             blocks: Vec::with_capacity(self.count_blocks()),
+            ep_table: ir::EpTable::new(),
             str_table: StringInterner::new(),
             atom_table: StringInterner::new(),
 
@@ -32,8 +33,8 @@ impl DesugaredProgram {
             labels: HashMap::new(),
         };
 
-        // Prelude entry point must be block 0
-        let _ = builder.create_block()?;
+        let label_zero = builder.create_block()?;
+        builder.ep_table.push((label_zero, ir::EntryPoint::Init));
 
         for scene in self.scenes.iter() {
             let label = builder.create_block()?;
@@ -62,19 +63,21 @@ enum Block {
     Complete(ir::Block),
 }
 
-enum Func {
-    Scene(ast::QfdSceneName),
-    Lambda(ast::QfdLabel),
+#[derive(Clone, Debug)]
+struct EnvInfo {
+    id: ir::Env,
+    mappings: Vec<(String, ir::Rvalue)>,
 }
 
 struct Builder {
     blocks: Vec<Block>,
+    ep_table: ir::EpTable,
     str_table: StringInterner<ir::StrId>,
     atom_table: StringInterner<ir::AtomId>,
 
     pc: usize,
     bindings: Vec<(String, ir::Var)>,
-    envs: HashMap<ast::Modpath, Vec<(String, ir::Rvalue)>>,
+    envs: HashMap<ast::Modpath, EnvInfo>,
 
     next_var: Counter<ir::Var>,
     next_tmp: Counter<String>,
@@ -211,7 +214,11 @@ impl Builder {
             (name, ir::Rvalue::LoadEnv(i as u32))
         }).collect();
 
-        self.envs.insert(modpath, mappings);
+        self.envs.insert(modpath, EnvInfo {
+            id: env_id,
+            mappings: mappings,
+        });
+
         self.bindings.clear();
 
         Ok(())
@@ -251,24 +258,33 @@ impl Builder {
                     ice!("Incomplete block: {:?}", block)
                 },
             }).collect::<Try<_>>()?,
+            ep_table: self.ep_table,
             str_table: self.str_table,
             atom_table: self.atom_table,
         })
     }
 
     fn tr_scene(&mut self, t: ast::Scene) -> Try<()> {
+        let qfd = t.name.qualified()?;
+
         let env = {
-            let qfd = t.name.qualified()?;
             match self.envs.get(&qfd.in_module) {
                 Some(env) => env.clone(),
                 None => ice!("Missing env for {}", qfd),
             }
         };
 
+        let ep = ir::EntryPoint::Scene {
+            name: format!("{}", qfd),
+            argc: t.args.len() as u32,
+            env: env.id,
+        };
+
         let label = self.tr_scene_name(t.name)?;
+
         self.jump(label)?;
 
-        for (name, value) in env.into_iter() {
+        for (name, value) in env.mappings.into_iter() {
             self.assign(&name, value)?;
         }
 
@@ -287,7 +303,13 @@ impl Builder {
     }
 
     fn tr_lambda(&mut self, t: ast::TrapLambda) -> Try<()> {
+        let ep = ir::EntryPoint::Lambda {
+            name: format!("{}", t.label.qualified()?),
+        };
+
         let label = self.tr_label(t.label)?;
+        self.ep_table.push((label, ep));
+
         self.jump(label)?;
 
         // NOTE: Environment is built dynamically by Stmt::Arm

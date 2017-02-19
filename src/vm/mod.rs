@@ -96,7 +96,7 @@ pub struct Program {
     /// Interned (global) string constants.
     pub str_table: StringInterner<StrId>,
 
-    pub env_table: VecMap<Label, EnvId>,
+    pub env_table: EnvTable,
 }
 
 /// Unencoded (immediately executable) VM instructions.
@@ -197,6 +197,8 @@ pub struct LocalValue<'a> {
 
 pub type JumpTable = VecMap<Label, InstrAddr>;
 
+pub type EnvTable = HashMap<Label, EnvId>;
+
 pub struct StackFrame {
     gpr: [Value; REG_COUNT],
     flag: [bool; REG_COUNT],
@@ -256,6 +258,7 @@ pub enum RunErr {
     NoSuchRegister(Reg),
     NoSuchFlag(Flag),
     NoSuchLabel(Label),
+    NoSuchScene(Label),
     FetchOutOfBounds(InstrAddr),
     IllegalInstr(Instr),
     UnallocatedAccess(usize),
@@ -290,7 +293,7 @@ impl Default for StackFrame {
 
 macro_rules! index_via_u32 {
     ( $name:ident, $( $value:ty ),* ) => {
-        #[derive(Copy, Clone, Debug, Default, PartialEq)]
+        #[derive(Copy, Clone, Debug, Default, Eq, Hash, PartialEq)]
         pub struct $name(pub u32);
 
         impl From<$name> for usize {
@@ -917,7 +920,8 @@ impl Scheduler {
                 {
                     let argv = process.stack.current().get(argv)?
                         .in_heap(&process.heap);
-                    let &env_id = self.program.env_table.get(label)?;
+                    let &env_id = self.program.env_table.get(&label)
+                        .ok_or(RunErr::NoSuchScene(label))?;
                     let env = self.env_table.get(env_id)?
                         .in_heap(&self.global_heap);
 
@@ -939,7 +943,8 @@ impl Scheduler {
                 {
                     let argv = process.stack.current().get(argv)?
                         .in_heap(&process.heap);
-                    let &env_id = self.program.env_table.get(label)?;
+                    let &env_id = self.program.env_table.get(&label)
+                        .ok_or(RunErr::NoSuchScene(label))?;
                     let env = self.env_table.get(env_id)?
                         .in_heap(&self.global_heap);
 

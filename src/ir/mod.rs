@@ -8,9 +8,27 @@ use string_interner::{StringInterner, NonNegative};
 #[derive(Clone, Debug)]
 pub struct Program {
     pub blocks: Vec<Block>,
+    pub ep_table: EpTable,
     pub str_table: StringInterner<StrId>,
     pub atom_table: StringInterner<AtomId>,
 }
+
+#[derive(Clone, Debug)]
+pub enum EntryPoint {
+    Init,
+
+    Scene {
+        name: String,
+        argc: u32,
+        env: Env,
+    },
+
+    Lambda {
+        name: String,
+    },
+}
+
+pub type EpTable = Vec<(Label, EntryPoint)>;
 
 #[derive(Copy, Clone, Debug, Eq, Hash, PartialEq)]
 pub struct Env(pub u32);
