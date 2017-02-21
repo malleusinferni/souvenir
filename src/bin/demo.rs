@@ -32,6 +32,9 @@ fn run_demo<P: AsRef<Path>>(path: P, scene: &str) -> Try<()> {
 
     let mut interpreter = program.init().unwrap();
 
+    // FIXME: Run scene
+    let _ = scene;
+
     loop {
         interpreter.dispatch();
     }

@@ -8,7 +8,7 @@ impl Display for Program {
             .map(|(k, v)| (v.clone(), k))
             .collect();
 
-        pairs.sort_by_key(|&(v, k)| v.0);
+        pairs.sort_by_key(|&(InstrAddr(addr), _)| addr);
         pairs.reverse();
 
         let mut label = pairs.pop();

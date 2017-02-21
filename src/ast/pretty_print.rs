@@ -184,7 +184,7 @@ impl Display for TokErr {
     fn fmt(&self, f: &mut Formatter) -> Result {
         use ast::tokens::ErrReason;
 
-        let &TokErr { location, ref reason } = self;
+        let &TokErr { ref reason, .. } = self;
 
         match reason {
             &ErrReason::UnrecognizedToken => {

@@ -28,7 +28,6 @@ impl DesugaredProgram {
             next_var: Counter(0, ir::Var),
             next_tmp: Counter(0, maketemp),
 
-            preludes: HashMap::new(),
             scenes: HashMap::new(),
             labels: HashMap::new(),
         };
@@ -82,7 +81,6 @@ struct Builder {
     next_var: Counter<ir::Var>,
     next_tmp: Counter<String>,
 
-    preludes: HashMap<ast::Modpath, ir::Label>,
     scenes: HashMap<ast::QfdSceneName, ir::Label>,
     labels: HashMap<ast::QfdLabel, ir::Label>,
 }
@@ -254,7 +252,7 @@ impl Builder {
         Ok(ir::Program {
             blocks: self.blocks.into_iter().map(|block| match block {
                 Block::Complete(block) => Ok(block),
-                Block::Partial(info, block) => {
+                Block::Partial(_info, block) => {
                     ice!("Incomplete block: {:?}", block)
                 },
             }).collect::<Try<_>>()?,
@@ -281,6 +279,7 @@ impl Builder {
         };
 
         let label = self.tr_scene_name(t.name)?;
+        self.ep_table.push((label, ep));
 
         self.jump(label)?;
 

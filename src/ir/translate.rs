@@ -2,7 +2,7 @@ use std::collections::HashMap;
 
 use string_interner::StringInterner;
 
-use vecmap::{VecMap, CheckedFrom};
+use vecmap::CheckedFrom;
 
 use ir;
 use vm;
@@ -18,7 +18,6 @@ impl ir::Program {
             jump_table: vm::JumpTable::with_capacity(self.blocks.len()),
             str_table: self.str_table,
             atom_table: self.atom_table,
-            current: vm::Label::checked_from(0).unwrap(),
         };
 
         for block in self.blocks.into_iter() {
@@ -37,6 +36,8 @@ impl ir::Program {
     pub fn build_env_table(&self) -> Try<vm::EnvTable> {
         Ok(self.ep_table.iter().cloned().filter_map(|(label, ep)| {
             if let ir::EntryPoint::Scene { name, argc, env } = ep {
+                // TODO: Record function names and arg counts
+                let _ = (name, argc);
                 let label = vm::Label(label.0);
                 let env_id = vm::EnvId(env.0);
                 Some((label, env_id))
@@ -54,7 +55,6 @@ struct Translator {
     jump_table: vm::JumpTable,
     str_table: StringInterner<vm::StrId>,
     atom_table: StringInterner<vm::AtomId>,
-    current: vm::Label,
 }
 
 impl Translator {
@@ -219,7 +219,7 @@ impl Translator {
                     }))
                 },
 
-                ir::Rvalue::Splice(vars) => {
+                ir::Rvalue::Splice(_vars) => {
                     ice!("Unimplemented: splice")
                 },
 
@@ -365,7 +365,7 @@ impl Translator {
                 self.emit(vm::Instr::Blocking(vm::Io::Trace(var)))
             },
 
-            ir::Op::Wait(val) => {
+            ir::Op::Wait(_val) => {
                 // FIXME: Actually translate time units
                 self.emit(vm::Instr::Blocking(vm::Io::Sleep(9000.0)))
             },

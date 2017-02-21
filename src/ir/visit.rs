@@ -31,6 +31,7 @@ pub trait Visitor {
             },
 
             &Op::Export(ref env, ref var) => {
+                let _ = env;
                 self.visit_var_read(var)?;
             },
 
@@ -169,22 +170,31 @@ pub trait Visitor {
     }
 
     fn visit_tval(&mut self, tval: &Tvalue) -> Try<()> {
+        // FIXME: Scan these
+        match tval {
+            _ => (),
+        }
+
         Ok(())
     }
 
     fn visit_flag(&mut self, flag: &Flag) -> Try<()> {
+        let _ = flag;
         Ok(())
     }
 
     fn visit_label(&mut self, label: &Label) -> Try<()> {
+        let _ = label;
         Ok(())
     }
 
     fn visit_var_read(&mut self, var: &Var) -> Try<()> {
+        let _ = var;
         Ok(())
     }
 
     fn visit_var_write(&mut self, var: &Var) -> Try<()> {
+        let _ = var;
         Ok(())
     }
 }

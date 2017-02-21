@@ -67,7 +67,7 @@ impl Label {
     pub fn qualified(&self) -> Try<QfdLabel> {
         match self {
             &Label::Qualified(ref q) => Ok(q.clone()),
-            other => ice!("Expected label name {} to be qualified", self),
+            _ => ice!("Expected label name {} to be qualified", self),
         }
     }
 }

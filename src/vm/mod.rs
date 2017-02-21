@@ -487,13 +487,6 @@ impl Heap {
             other => other,
         })
     }
-
-    fn smaller(&self) -> Self {
-        Heap {
-            values: Vec::with_capacity(self.values.len() / 4),
-            strings: Vec::with_capacity(self.strings.len() / 4),
-        }
-    }
 }
 
 impl Process {
@@ -757,10 +750,6 @@ impl Process {
 
         self.run_state()
     }
-
-    fn write_reg(&mut self, r: Reg, v: Value) -> Ret<()> {
-        self.stack.current().set(r, v)
-    }
 }
 
 impl Program {
@@ -792,7 +781,9 @@ impl Scheduler {
         self.inbuf.extend(inbuf.into_iter());
 
         for event in self.inbuf.drain(..) {
-            unimplemented!()
+            match event {
+                _ => unimplemented!(),
+            }
         }
     }
 
@@ -895,6 +886,9 @@ impl Scheduler {
                 let value = process.stack.current().get(src)?;
                 let choices = self.get_menu(value.in_heap(&process.heap))?;
                 let tag = self.tag(id);
+
+                // FIXME: Record register where we'll write the answer
+                let _ = dst;
                 let token = AskToken(tag.private_clone(), choices);
                 self.outbuf.push_back(token.into());
                 Ok(Some(tag))
@@ -918,7 +912,7 @@ impl Scheduler {
                 unimplemented!()
             },
 
-            Io::Sleep(time) => {
+            Io::Sleep(_time) => {
                 unimplemented!()
             },
 
@@ -966,7 +960,7 @@ impl Scheduler {
                 Ok(None)
             },
 
-            Io::Trace(reg) => {
+            Io::Trace(_reg) => {
                 unimplemented!()
             },
         }
@@ -1052,28 +1046,7 @@ impl Scheduler {
     }
 }
 
-impl Instr {
-    fn io(self) -> Ret<Io> {
-        match self {
-            Instr::Blocking(io) => Ok(io),
-            _ => Err(RunErr::IllegalInstr(self)),
-        }
-    }
-}
-
 impl RunQueue {
-    fn find_mut(&mut self, id: ActorId) -> Option<&mut Process> {
-        if let Some(process) = self.running.get_mut(&id) {
-            return Some(process.as_mut());
-        }
-
-        if let Some(pair) = self.sleeping.get_mut(&id) {
-            return Some(pair.1.as_mut());
-        }
-
-        None
-    }
-
     fn fetch(&mut self) -> Box<Process> {
         if let Some(old) = self.dead.pop_front() {
             old

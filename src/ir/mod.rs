@@ -3,7 +3,7 @@ pub mod visit;
 pub mod allocate;
 pub mod translate;
 
-use string_interner::{StringInterner, NonNegative};
+use string_interner::StringInterner;
 
 #[derive(Clone, Debug)]
 pub struct Program {
@@ -165,24 +165,3 @@ impl Label {
         }
     }
 }
-
-/*
-impl From<usize> for StrId {
-    fn from(u: usize) -> Self { StrId(u as u32) }
-}
-
-impl From<StrId> for usize {
-    fn from(StrId(u): StrId) -> Self { u as usize }
-}
-
-impl From<usize> for AtomId {
-    fn from(u: usize) -> Self { AtomId(u as u32) }
-}
-
-impl From<AtomId> for usize {
-    fn from(AtomId(u): AtomId) -> Self { u as usize }
-}
-
-impl NonNegative for StrId {}
-impl NonNegative for AtomId {}
-*/
