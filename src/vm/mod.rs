@@ -240,6 +240,7 @@ pub struct Process {
     stack: Stack,
     heap: Heap,
     traps: Vec<Trap>,
+    inbox: VecDeque<HeapAddr>,
     op: Instr,
     pc: InstrAddr,
 }
@@ -663,6 +664,13 @@ impl Process {
                 if !finished {
                     self.call(cc, program)?;
                 }
+
+                // If self.call() proceeded with the next trap in the queue,
+                // this call will return immediately because there will be an
+                // upper stack frame. If self.call() ran out of traps, there
+                // may still be messages in the queue -- but if not, it still
+                // does nothing and we'll continue with normal execution.
+                self.check_inbox(program)?;
             },
 
             Instr::Arm(env, label) => {
@@ -688,6 +696,30 @@ impl Process {
             env: addr,
             label: label,
         });
+        Ok(())
+    }
+
+    fn check_inbox(&mut self, program: &Program) -> Ret<()> {
+        if self.stack.upper.is_some() {
+            return Ok(());
+        }
+
+        if self.traps.is_empty() {
+            self.inbox.clear();
+            return Ok(());
+        }
+
+        if let Some(argv) = self.inbox.pop_front() {
+            let cc = Continuation {
+                return_addr: self.pc,
+                queue: self.traps.clone(),
+                frame: StackFrame::default(),
+                argv: argv,
+            };
+
+            self.call(cc, program)?;
+        }
+
         Ok(())
     }
 
@@ -736,6 +768,8 @@ impl Process {
 
     fn run(&mut self, program: &Program) -> Ret<RunState> {
         const SOME_SMALL_NUMBER: usize = 100;
+
+        // FIXME: When do we check the inbox?
 
         for _ in 0 .. SOME_SMALL_NUMBER {
             match self.run_state()? {
@@ -1194,6 +1228,7 @@ impl Default for Process {
             stack: Stack::default(),
             heap: Heap::default(),
             traps: vec![],
+            inbox: VecDeque::with_capacity(8),
             op: Instr::Nop,
             pc: InstrAddr(0),
         }
