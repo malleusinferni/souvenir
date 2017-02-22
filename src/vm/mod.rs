@@ -96,6 +96,7 @@ pub struct Program {
     /// Interned (global) string constants.
     pub str_table: StringInterner<StrId>,
 
+    /// Sparse map of env IDs for labels that need them.
     pub env_table: EnvTable,
 }
 
@@ -195,6 +196,13 @@ pub struct LocalValue<'a> {
     heap: &'a Heap,
 }
 
+#[derive(Clone, Debug)]
+pub struct SceneDef {
+    name: String,
+    env_id: EnvId,
+    argc: u32,
+}
+
 pub type JumpTable = VecMap<Label, InstrAddr>;
 
 pub type EnvTable = HashMap<Label, EnvId>;
@@ -269,10 +277,12 @@ pub enum RunErr {
     DividedByZero,
     Unrepresentable(usize),
     Uninitialized,
+    UnrecognizedAtom,
     NoSuchAtom(AtomId),
     NoSuchValue(Value),
     EnvNotInitialized(EnvId),
     EnvExportMismatch { expected: EnvId, found: EnvId, },
+    ArgCountMismatch { expected: usize, found: usize, },
     InitFailure,
 }
 
@@ -811,6 +821,40 @@ impl Program {
 }
 
 impl Scheduler {
+    /*
+     * FIXME: Will not work with Process::start()!
+    pub fn spawn(&mut self, name: &str, args: Vec<RawValue>) -> Ret<ActorId> {
+        let (label, argc) = self.scenes.get(name).cloned()
+            .ok_or(RunErr::NoSuchScene(name.to_owned()))?;
+
+        let argc = argc as usize;
+
+        if argc != args.len() {
+            return Err(RunErr::ArgCountMismatch {
+                expected: argc,
+                found: args.len(),
+            });
+        }
+
+        let mut task = self.create();
+
+        let argv = self.unmarshal(RawValue::List(args), &mut task.process.heap)?;
+
+        {
+            let env_id = self.program.scene_table.get(&label)
+                .ok_or(RunErr::NoSuchLabel(label))?
+                .env_id;
+            let env = self.env_table.get(env_id)?
+                .in_heap(&self.global_heap);
+            task.process.start(argv, env, label, &self.program)?;
+        }
+
+        let id = task.id;
+        self.queue.running.insert(task.id, task.process);
+        Ok(id)
+    }
+    */
+
     pub fn send<I: IntoIterator<Item=InSignal>>(&mut self, inbuf: I) {
         self.inbuf.extend(inbuf.into_iter());
 
@@ -1058,6 +1102,39 @@ impl Scheduler {
 
             Value::Capacity(_) => Err(RunErr::HeapCorrupted(item.value)),
             Value::Undefined => Err(RunErr::Uninitialized),
+        }
+    }
+
+    fn unmarshal(&self, item: RawValue, heap: &mut Heap) -> Ret<Value> {
+        match item {
+            RawValue::ActorId(a) => Ok(Value::ActorId(a)),
+
+            RawValue::Int(i) => Ok(Value::Int(i)),
+
+            RawValue::Atom(name) => {
+                if let Some(id) = self.program.atom_table.get(name) {
+                    Ok(Value::Atom(id))
+                } else {
+                    Err(RunErr::UnrecognizedAtom)
+                }
+            },
+
+            RawValue::Str(s) => {
+                if let Some(id) = self.program.str_table.get(&s) {
+                    Ok(Value::StrConst(id))
+                } else {
+                    unimplemented!()
+                }
+            },
+
+            RawValue::List(items) => {
+                let addr = heap.alloc(ListLen(items.len() as u32))?;
+                for (i, item) in items.into_iter().enumerate() {
+                    let value = self.unmarshal(item, heap)?;
+                    heap.set(addr, i as u32, value)?;
+                }
+                Ok(Value::ListAddr(addr))
+            },
         }
     }
 
