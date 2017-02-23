@@ -16,9 +16,6 @@ pub struct Scheduler {
     /// Buffer of processes presently being executed.
     workspace: VecDeque<Task>,
 
-    /// Buffer of input events presently being handled.
-    inbuf: VecDeque<InSignal>,
-
     /// Buffered output from execution.
     outbuf: VecDeque<OutSignal>,
 
@@ -98,6 +95,9 @@ pub struct Program {
 
     /// Sparse map of env IDs for labels that need them.
     pub env_table: EnvTable,
+
+    /// Map of (qualified) scene names to their corresponding entry points.
+    pub scene_table: SceneTable,
 }
 
 /// Unencoded (immediately executable) VM instructions.
@@ -198,14 +198,15 @@ pub struct LocalValue<'a> {
 
 #[derive(Clone, Debug)]
 pub struct SceneDef {
-    name: String,
-    env_id: EnvId,
-    argc: u32,
+    pub label: Label,
+    pub argc: u32,
 }
 
 pub type JumpTable = VecMap<Label, InstrAddr>;
 
 pub type EnvTable = HashMap<Label, EnvId>;
+
+pub type SceneTable = HashMap<String, SceneDef>;
 
 pub struct StackFrame {
     gpr: [Value; REG_COUNT],
@@ -278,6 +279,7 @@ pub enum RunErr {
     Unrepresentable(usize),
     Uninitialized,
     UnrecognizedAtom,
+    UnrecognizedSceneName,
     NoSuchAtom(AtomId),
     NoSuchValue(Value),
     EnvNotInitialized(EnvId),
@@ -808,7 +810,6 @@ impl Program {
             },
             global_heap: Heap::default(),
             env_table: VecMap::with_capacity(32),
-            inbuf: VecDeque::with_capacity(32),
             outbuf: VecDeque::with_capacity(32),
             next_event: 0,
             next_pid: 0,
@@ -821,11 +822,9 @@ impl Program {
 }
 
 impl Scheduler {
-    /*
-     * FIXME: Will not work with Process::start()!
     pub fn spawn(&mut self, name: &str, args: Vec<RawValue>) -> Ret<ActorId> {
-        let (label, argc) = self.scenes.get(name).cloned()
-            .ok_or(RunErr::NoSuchScene(name.to_owned()))?;
+        let SceneDef { label, argc } = self.program.scene_table.get(name)
+            .cloned().ok_or(RunErr::UnrecognizedSceneName)?;
 
         let argc = argc as usize;
 
@@ -838,31 +837,37 @@ impl Scheduler {
 
         let mut task = self.create();
 
-        let argv = self.unmarshal(RawValue::List(args), &mut task.process.heap)?;
+        // FIXME: Can't use Process::start() here
 
-        {
-            let env_id = self.program.scene_table.get(&label)
-                .ok_or(RunErr::NoSuchLabel(label))?
-                .env_id;
-            let env = self.env_table.get(env_id)?
-                .in_heap(&self.global_heap);
-            task.process.start(argv, env, label, &self.program)?;
-        }
+        let args = RawValue::List(args);
+        let argv = self.unmarshal(args, &mut task.process.heap)?;
+        task.process.stack.lower.set(Reg::arg(), argv)?;
+
+        let env = task.process.heap.localize({
+            let &env_id = self.program.env_table.get(&label)
+                .ok_or(RunErr::NoSuchLabel(label))?;
+
+            self.env_table.get(env_id)?.in_heap(&self.global_heap)
+        })?;
+        task.process.stack.lower.set(Reg::env(), env)?;
+
+        task.process.pc = *self.program.jump_table.get(label)?;
+        task.process.fetch(&self.program)?;
 
         let id = task.id;
         self.queue.running.insert(task.id, task.process);
+
         Ok(id)
     }
-    */
 
-    pub fn send<I: IntoIterator<Item=InSignal>>(&mut self, inbuf: I) {
-        self.inbuf.extend(inbuf.into_iter());
-
-        for event in self.inbuf.drain(..) {
-            match event {
-                _ => unimplemented!(),
-            }
+    pub fn write(&mut self, signal: InSignal) {
+        match signal {
+            _ => unimplemented!(),
         }
+    }
+
+    pub fn read(&mut self) -> Option<OutSignal> {
+        self.outbuf.pop_front()
     }
 
     pub fn dispatch(&mut self) {

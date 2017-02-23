@@ -11,9 +11,12 @@ use driver::Try;
 
 impl ir::Program {
     pub fn translate(self) -> Try<vm::Program> {
+        let (env_table, scene_table) = self.build_tables()?;
+
         let mut translator = Translator {
             registers: self.alloc_registers()?,
-            env_table: self.build_env_table()?,
+            env_table: env_table,
+            scene_table: scene_table,
             code: Vec::new(),
             jump_table: vm::JumpTable::with_capacity(self.blocks.len()),
             str_table: self.str_table,
@@ -30,27 +33,40 @@ impl ir::Program {
             str_table: translator.str_table,
             atom_table: translator.atom_table,
             env_table: translator.env_table,
+            scene_table: translator.scene_table,
         })
     }
 
-    pub fn build_env_table(&self) -> Try<vm::EnvTable> {
-        Ok(self.ep_table.iter().cloned().filter_map(|(label, ep)| {
-            if let ir::EntryPoint::Scene { name, argc, env } = ep {
-                // TODO: Record function names and arg counts
-                let _ = (name, argc);
-                let label = vm::Label(label.0);
-                let env_id = vm::EnvId(env.0);
-                Some((label, env_id))
-            } else {
-                None
-            }
-        }).collect())
+    pub fn build_tables(&self) -> Try<(vm::EnvTable, vm::SceneTable)> {
+        let mut scene_table = vm::SceneTable::new();
+        let mut env_table = vm::EnvTable::new();
+
+        for (ir::Label(label), ep) in self.ep_table.iter().cloned() {
+            let (name, argc, ir::Env(env_id)) = match ep {
+                ir::EntryPoint::Scene { name, argc, env } => (name, argc, env),
+                _ => continue,
+            };
+
+            let label = vm::Label(label);
+            let env_id = vm::EnvId(env_id);
+
+            let def = vm::SceneDef {
+                label: label,
+                argc: argc,
+            };
+
+            scene_table.insert(name, def);
+            env_table.insert(label, env_id);
+        }
+
+        Ok((env_table, scene_table))
     }
 }
 
 struct Translator {
     registers: HashMap<ir::Var, vm::Reg>,
     env_table: vm::EnvTable,
+    scene_table: vm::SceneTable,
     code: Vec<vm::Instr>,
     jump_table: vm::JumpTable,
     str_table: StringInterner<vm::StrId>,

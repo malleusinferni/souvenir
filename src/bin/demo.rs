@@ -32,10 +32,15 @@ fn run_demo<P: AsRef<Path>>(path: P, scene: &str) -> Try<()> {
 
     let mut interpreter = program.init().unwrap();
 
-    // FIXME: Run scene
-    let _ = scene;
+    let actor = interpreter.spawn(scene, vec![]).unwrap();
 
     loop {
         interpreter.dispatch();
+
+        if let Some(signal) = interpreter.read() {
+            match signal {
+                _ => continue,
+            }
+        }
     }
 }
