@@ -4,6 +4,10 @@ use vm::*;
 
 impl Display for Program {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        for (name, def) in self.scene_table.iter() {
+            writeln!(f, "scene {}/{}:\t{}", name, def.argc, def.label)?;
+        }
+
         let mut pairs: Vec<_> = self.jump_table.iter()
             .map(|(k, v)| (v.clone(), k))
             .collect();
