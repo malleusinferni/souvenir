@@ -42,7 +42,10 @@ fn run_demo<P: AsRef<Path>>(path: P, scene: &str) -> Try<()> {
 
             match signal {
                 OutSignal::Exit(id) => {
-                    if id == actor { break; }
+                    if id == actor {
+                        println!("~ THE END ~");
+                        break;
+                    }
                 },
 
                 OutSignal::Hcf(_, err) => {
@@ -52,7 +55,6 @@ fn run_demo<P: AsRef<Path>>(path: P, scene: &str) -> Try<()> {
 
                 OutSignal::Trace(_, value) => {
                     println!("{}", value);
-                    break;
                 },
 
                 _ => (),

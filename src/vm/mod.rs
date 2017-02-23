@@ -68,6 +68,7 @@ pub struct ActorId(u32);
 struct Task {
     id: ActorId,
     process: Box<Process>,
+    status: Ret<RunState>,
 }
 
 #[derive(Debug, Eq, Hash, PartialEq)]
@@ -875,11 +876,25 @@ impl Scheduler {
         // FIXME: This isn't a very good scheduler.
 
         self.workspace.extend(self.queue.running.drain().map(|(id, p)| {
-            Task { id: id, process: p, }
+            Task {
+                id: id,
+                process: p,
+                status: Ok(RunState::Running),
+            }
         }));
 
+        for task in self.workspace.iter_mut() {
+            task.status = task.process.run(&self.program);
+        }
+
         while let Some(mut task) = self.workspace.pop_front() {
-            match self.run(&mut task) {
+            if let Ok(RunState::Exiting) = task.status {
+                self.outbuf.push_back(OutSignal::Exit(task.id));
+                self.queue.dead.push_back(task.process);
+                continue;
+            }
+
+            match self.unblock(&mut task) {
                 Ok(Some(tag)) => {
                     self.queue.sleeping.insert(task.id, (tag, task.process));
                 },
@@ -936,10 +951,10 @@ impl Scheduler {
         Ok(())
     }
 
-    fn run(&mut self, task: &mut Task) -> Ret<Option<Tag>> {
-        let &mut Task { id, ref mut process } = task;
+    fn unblock(&mut self, task: &mut Task) -> Ret<Option<Tag>> {
+        let &mut Task { id, ref mut process, status } = task;
 
-        let io = match process.run(&self.program)? {
+        let io = match status? {
             RunState::Blocked(io) => io,
             RunState::Running => return Ok(None),
             _ => return Err(RunErr::IllegalInstr(process.op)),
@@ -1065,6 +1080,7 @@ impl Scheduler {
         Task {
             id: new_id,
             process: process,
+            status: Ok(RunState::Running),
         }
     }
 
