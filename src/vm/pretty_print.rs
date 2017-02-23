@@ -2,6 +2,26 @@ use std::fmt::{self, Display};
 
 use vm::*;
 
+impl Display for RawValue {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        match self {
+            &RawValue::ActorId(ActorId(id)) => write!(f, "?PID({})", id),
+
+            &RawValue::Int(i) => write!(f, "{}", i),
+
+            &RawValue::Str(ref s) => write!(f, "> {}", s),
+
+            &RawValue::Atom(ref a) => write!(f, "#{}", a),
+
+            &RawValue::List(ref values) => {
+                write!(f, "[{}]", values.iter().map(|value| {
+                    format!("{}", value)
+                }).collect::<Vec<_>>().join(", "))
+            },
+        }
+    }
+}
+
 impl Display for Program {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         for (name, def) in self.scene_table.iter() {

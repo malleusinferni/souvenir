@@ -58,6 +58,7 @@ pub enum OutSignal {
     Hcf(ActorId, RunErr),
     Say(SayToken),
     Ask(AskToken),
+    Trace(ActorId, RawValue),
 }
 
 /// Opaque key into the supervisor's list of processes.
@@ -1043,8 +1044,12 @@ impl Scheduler {
                 Ok(None)
             },
 
-            Io::Trace(_reg) => {
-                unimplemented!()
+            Io::Trace(reg) => {
+                let value = process.stack.current().get(reg)?;
+                let message = self.marshal(value.in_heap(&process.heap))?;
+                self.outbuf.push_back(OutSignal::Trace(id, message));
+                process.fetch(&self.program)?;
+                Ok(None)
             },
         }
     }

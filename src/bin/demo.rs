@@ -38,9 +38,27 @@ fn run_demo<P: AsRef<Path>>(path: P, scene: &str) -> Try<()> {
         interpreter.dispatch();
 
         if let Some(signal) = interpreter.read() {
+            use souvenir::vm::OutSignal;
+
             match signal {
-                _ => continue,
+                OutSignal::Exit(id) => {
+                    if id == actor { break; }
+                },
+
+                OutSignal::Hcf(_, err) => {
+                    println!("Process died with an error: {:?}", err);
+                    break;
+                },
+
+                OutSignal::Trace(_, value) => {
+                    println!("{}", value);
+                    break;
+                },
+
+                _ => (),
             }
         }
     }
+
+    Ok(())
 }
