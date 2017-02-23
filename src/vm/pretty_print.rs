@@ -2,6 +2,23 @@ use std::fmt::{self, Display};
 
 use vm::*;
 
+impl From<RawValue> for String {
+    fn from(raw: RawValue) -> Self {
+        match raw {
+            RawValue::Str(s) => s,
+
+            RawValue::List(values) => {
+                values.into_iter()
+                    .map(String::from)
+                    .collect::<Vec<_>>()
+                    .join(" ")
+            },
+
+            other => format!("{}", other),
+        }
+    }
+}
+
 impl Display for RawValue {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match self {

@@ -864,6 +864,15 @@ impl Scheduler {
 
     pub fn write(&mut self, signal: InSignal) {
         match signal {
+            InSignal::EndSay(SayReplyToken(ticket)) => {
+                if let Some((id, mut process)) = self.wakeup(ticket) {
+                    // FIXME: Reconsider fetch schedule so we don't have to
+                    // ignore this error
+                    let _ = process.fetch(&self.program);
+                    self.queue.running.insert(id, process);
+                }
+            },
+
             _ => unimplemented!(),
         }
     }
@@ -1090,6 +1099,23 @@ impl Scheduler {
         tag
     }
 
+    fn wakeup(&mut self, ticket: Tag) -> Option<(ActorId, Box<Process>)> {
+        let id = ticket.0;
+
+        match self.queue.sleeping.remove(&id) {
+            Some((waiting_for, process)) => {
+                if ticket == waiting_for {
+                    Some((id, process))
+                } else {
+                    self.queue.sleeping.insert(id, (waiting_for, process));
+                    None
+                }
+            },
+
+            None => None,
+        }
+    }
+
     fn marshal(&self, item: LocalValue) -> Ret<RawValue> {
         match item.value {
             Value::Int(i) => Ok(RawValue::Int(i)),
@@ -1190,6 +1216,16 @@ impl RunQueue {
         } else {
             Box::new(Process::default())
         }
+    }
+}
+
+impl SayToken {
+    pub fn content(&self) -> String {
+        String::from(self.1.clone())
+    }
+
+    pub fn reply(self) -> SayReplyToken {
+        SayReplyToken(self.0)
     }
 }
 
@@ -1301,6 +1337,12 @@ impl From<IndexErr<EnvId>> for RunErr {
             IndexErr::OutOfBounds(k) => RunErr::EnvNotInitialized(k),
             IndexErr::ReprOverflow(u) => RunErr::Unrepresentable(u),
         }
+    }
+}
+
+impl From<SayReplyToken> for InSignal {
+    fn from(token: SayReplyToken) -> Self {
+        InSignal::EndSay(token)
     }
 }
 

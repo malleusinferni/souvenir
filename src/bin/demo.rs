@@ -57,6 +57,11 @@ fn run_demo<P: AsRef<Path>>(path: P, scene: &str) -> Try<()> {
                     println!("{}", value);
                 },
 
+                OutSignal::Say(token) => {
+                    println!("{}", token.content());
+                    interpreter.write(token.reply().into());
+                },
+
                 _ => (),
             }
         }
