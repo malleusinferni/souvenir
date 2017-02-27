@@ -64,7 +64,7 @@ fn run_demo<P: AsRef<Path>>(path: P, scene: &str) -> Try<()> {
 
                 OutSignal::Ask(token) => {
                     let choices = token.content().iter().map(|&(i, ref value)| {
-                        (i, format!("{}", value))
+                        (i, String::from(value.clone()))
                     }).collect::<Vec<_>>();
 
                     let pick = ask_user(choices);
