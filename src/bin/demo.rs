@@ -62,10 +62,42 @@ fn run_demo<P: AsRef<Path>>(path: P, scene: &str) -> Try<()> {
                     interpreter.write(token.reply().into());
                 },
 
-                _ => (),
+                OutSignal::Ask(token) => {
+                    let choices = token.content().iter().map(|&(i, ref value)| {
+                        (i, format!("{}", value))
+                    }).collect::<Vec<_>>();
+
+                    let pick = ask_user(choices);
+                    interpreter.write(token.reply(pick).into());
+                },
+
+                //_ => (),
             }
         }
     }
 
     Ok(())
+}
+
+fn ask_user(choices: Vec<(i32, String)>) -> i32 {
+    use std::io::stdin;
+
+    let mut input = String::with_capacity(128);
+
+    loop {
+        for (i, &(_, ref text)) in choices.iter().enumerate() {
+            println!("{}: {}", i + 1, text);
+        }
+
+        stdin().read_line(&mut input).unwrap();
+
+        if let Ok(i) = input.trim().parse::<usize>() {
+            if let Some(&(pick, _)) = choices.get(i - 1) {
+                return pick;
+            }
+        }
+
+        println!("No! Try again. (Input was: {:?})", &input);
+        input.clear();
+    }
 }

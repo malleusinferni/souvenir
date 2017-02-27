@@ -77,8 +77,8 @@ struct Tag(ActorId, u32);
 // NB. No Copy, no Clone!
 pub struct SayToken(Tag, RawValue);
 pub struct SayReplyToken(Tag);
-pub struct AskToken(Tag, Vec<(i32, RawValue)>);
-pub struct AskReplyToken(Tag, i32);
+pub struct AskToken(Tag, Vec<(i32, RawValue)>, Reg);
+pub struct AskReplyToken(Tag, i32, Reg);
 
 /// Executable program
 #[derive(Clone, Debug)]
@@ -873,6 +873,15 @@ impl Scheduler {
                 }
             },
 
+            InSignal::EndAsk(AskReplyToken(ticket, index, dst)) => {
+                if let Some((id, mut process)) = self.wakeup(ticket) {
+                    let _ = process.fetch(&self.program);
+                    process.stack.current().set(dst, Value::Int(index))
+                        .expect("Ask reply wrote to a bad register");
+                    self.queue.running.insert(id, process);
+                }
+            },
+
             _ => unimplemented!(),
         }
     }
@@ -995,9 +1004,7 @@ impl Scheduler {
                 let choices = self.get_menu(value.in_heap(&process.heap))?;
                 let tag = self.tag(id);
 
-                // FIXME: Record register where we'll write the answer
-                let _ = dst;
-                let token = AskToken(tag.private_clone(), choices);
+                let token = AskToken(tag.private_clone(), choices, dst);
                 self.outbuf.push_back(token.into());
                 Ok(Some(tag))
             },
@@ -1229,6 +1236,16 @@ impl SayToken {
     }
 }
 
+impl AskToken {
+    pub fn content(&self) -> &[(i32, RawValue)] {
+        &self.1
+    }
+
+    pub fn reply(self, i: i32) -> AskReplyToken {
+        AskReplyToken(self.0, i, self.2)
+    }
+}
+
 impl Reg {
     pub fn env() -> Self {
         Reg(0)
@@ -1343,6 +1360,12 @@ impl From<IndexErr<EnvId>> for RunErr {
 impl From<SayReplyToken> for InSignal {
     fn from(token: SayReplyToken) -> Self {
         InSignal::EndSay(token)
+    }
+}
+
+impl From<AskReplyToken> for InSignal {
+    fn from(token: AskReplyToken) -> Self {
+        InSignal::EndAsk(token)
     }
 }
 
