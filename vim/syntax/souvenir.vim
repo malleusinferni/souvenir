@@ -12,10 +12,12 @@ syn match souvenirNumber /\<\d\+\>/
 syn match souvenirRandom /\<\d\+d\d\+\>/
 syn match souvenirArithmetic /-\|+\|\*\|<=\?/
 
-syn region souvenirString start=/> / end=/$/ contains=souvenirTemplate
+syn region souvenirString start=/> / end=/$/ contains=tetanusBraces,tetanusTag
 syn region souvenirComment start=/--/ end=/$/
 
-syn region souvenirTemplate matchgroup=souvenirTemplateMarker start=/{{/ matchgroup=souvenirTemplateMarker end=/}}/ contained contains=souvenirVariableName
+syn region tetanusTagBody matchgroup=tetanusDelimiter start=/{/ end=/}/ contained contains=tetanusBraces,tetanusTag
+syn region tetanusBraces matchgroup=tetanusDelimiter start=/{/ matchgroup=tetanusDelimiter end=/}/ contained contains=souvenirVariableName
+syn match tetanusTag /\\\w\+/ contained nextgroup=tetanusTagBody
 
 syn keyword souvenirMatch trap given listen weave branch when if then
 syn keyword souvenirCommand let trace wait disarm spawn
@@ -63,10 +65,13 @@ hi def link souvenirMacro Macro
 hi def link souvenirSceneName Function
 hi def link souvenirLabel Tag
 hi def link souvenirParen Delimiter
-hi def link souvenirTemplateMarker Delimiter
 hi def link souvenirAtom Constant
 hi def link souvenirVariableName Identifier
 hi def link souvenirSend Statement
 hi def link souvenirEnd Delimiter
+
+hi def link tetanusTag PreProc
+hi def link tetanusTagBody String
+hi def link tetanusDelimiter Delimiter
 
 let b:current_syntax = 'souvenir'
