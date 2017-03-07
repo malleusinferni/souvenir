@@ -5,10 +5,10 @@ authors = ["Mako <jlauve@rsmw.net>"]
 build = "build.rs"
 
 [build-dependencies]
-lalrpop = "0.12.4"
+lalrpop = "0.12.5"
 
 [dependencies]
-lalrpop-util = "0.12.4"
+lalrpop-util = "0.12.5"
 rand = "0.3.15"
-string-interner = "0.3.1"
+string-interner = "0.3.3"
 clap = "2.20.5"
