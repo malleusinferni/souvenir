@@ -1,0 +1,26 @@
+let RingSize = 503
+
+== roundtrip(This, Next)
+
+listen
+| 1
+    trace This
+| Token
+    Next <- Token - 1
+    -> roundtrip(This, Next)
+;;
+
+== start(Token)
+
+let First = spawn roundtrip(0, Self)
+
+== fold(I, Prev, First)
+
+when I ?GT 0
+    let Current = spawn roundtrip(I, Last)
+    -> fold(I - 1, Current, First)
+;;
+
+First <- Token
+
+-> roundtrip(0, First)
